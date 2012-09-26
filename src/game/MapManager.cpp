@@ -27,6 +27,7 @@
 #include "CellImpl.h"
 #include "Corpse.h"
 #include "ObjectMgr.h"
+#include "InstanceData.h"
 
 #define CLASS_LOCK MaNGOS::ClassLevelLockable<MapManager, ACE_Recursive_Thread_Mutex>
 INSTANTIATE_SINGLETON_2(MapManager, CLASS_LOCK);
@@ -172,6 +173,74 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player)
     if(!entry)
         return false;
 
+    const char *mapName = entry->name[player->GetSession()->GetSessionDbcLocale()];
+
+    if(entry->IsDungeon())
+    {
+        if (entry->IsRaid())
+        {
+            // GMs can avoid raid limitations
+            if(!player->isGameMaster() && !sWorld.getConfig(CONFIG_BOOL_INSTANCE_IGNORE_RAID))
+            {
+                // can only enter in a raid group
+                Group* group = player->GetGroup();
+                if (!group || !group->isRaidGroup())
+                {
+                    // probably there must be special opcode, because client has this string constant in GlobalStrings.lua
+                    // TODO: this is not a good place to send the message
+                    player->GetSession()->SendAreaTriggerMessage("You must be in a raid group to enter %s instance", mapName);
+                    DEBUG_LOG("MAP: Player '%s' must be in a raid group to enter instance of '%s'", player->GetName(), mapName);
+                    return false;
+                }
+            }
+
+            // hacky check of Icecrown Citadel difficulty
+            // can access heroic only with raid leader having Lich King killed on given difficulty
+            if (mapid == 631 && !player->isGameMaster())
+            {
+                if (Group *pGroup= player->GetGroup())
+                {
+                    Difficulty diff = pGroup->GetRaidDifficulty();
+
+                    if (diff == RAID_DIFFICULTY_10MAN_HEROIC || diff == RAID_DIFFICULTY_25MAN_HEROIC)
+                    {
+                        Player *pLeader = sObjectMgr.GetPlayer(pGroup->GetLeaderGuid());
+                        uint32 achievId = diff == RAID_DIFFICULTY_10MAN_HEROIC ? 4530 : 4597;
+
+                        if (!pLeader || !pLeader->GetAchievementMgr().HasAchievement(achievId))
+                        {
+                            // "You must have the Lich King defeated first..." will be shown
+                            player->SendTransferAborted(mapid, TRANSFER_ABORT_DIFFICULTY, diff);
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        //The player has a heroic mode and tries to enter into instance which has no a heroic mode
+        MapDifficultyEntry const* mapDiff = GetMapDifficultyData(entry->MapID,player->GetDifficulty(entry->map_type == MAP_RAID));
+        if (!mapDiff)
+        {
+            bool isRegularTargetMap = player->GetDifficulty(entry->IsRaid()) == REGULAR_DIFFICULTY;
+
+            //Send aborted message
+            // FIX ME: what about absent normal/heroic mode with specific players limit...
+            player->SendTransferAborted(mapid, TRANSFER_ABORT_DIFFICULTY, isRegularTargetMap ? DUNGEON_DIFFICULTY_NORMAL : DUNGEON_DIFFICULTY_HEROIC);
+            return false;
+        }
+
+        if (!player->isGameMaster())
+        {
+            InstanceData* i_data = ((DungeonMap*)CreateMap(mapid, player))->GetInstanceData();
+
+            if (i_data && i_data->IsEncounterInProgress())
+            {
+                player->SendTransferAborted(mapid, TRANSFER_ABORT_ZONE_IN_COMBAT);
+                return false;
+            }
+        }
+    }
     return true;
 }
 

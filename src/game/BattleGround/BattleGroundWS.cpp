@@ -266,6 +266,7 @@ void BattleGroundWS::EventPlayerCapturedFlag(Player* source)
     else
         SendMessageToAll(LANG_BG_WS_CAPTURED_AF, CHAT_MSG_BG_SYSTEM_HORDE, source);
 
+    source->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE,1,42);
     UpdateFlagState(source->GetTeam(), 1);                  // flag state none
     UpdateTeamScore(source->GetTeam());
     // only flag capture should be updated

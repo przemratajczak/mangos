@@ -2185,6 +2185,9 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
         void _SetAINotifyScheduled(bool on) { m_AINotifyScheduled = on;}       // only for call from RelocationNotifyEvent code
         void OnRelocated();
 
+        // grid searcher ported from mangos
+        void GetGameObjectListWithEntryInGrid(std::list<GameObject*>& lList , WorldObject* pSource, uint32 uiEntry, float fMaxSearchRange);
+ 
         bool IsLinkingEventTrigger() const { return m_isCreatureLinkingTrigger; }
 
     protected:

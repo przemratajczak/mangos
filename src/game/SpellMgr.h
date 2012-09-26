@@ -279,7 +279,16 @@ uint32 GetProcFlag(SpellEntry const* spellInfo);
 
 inline bool IsDeathPersistentSpell(SpellEntry const *spellInfo)
 {
-    return spellInfo->HasAttribute(SPELL_ATTR_EX3_DEATH_PERSISTENT);
+    // somebody pls move this to spell_dbc table, thx ;x
+    switch(spellInfo->Id)
+    {
+        case 69065: // Impaled (Marrowgar)
+            return false;
+        case 70675: // Rot Worm Spawner (Valithria)
+            return true;
+        default:
+             return spellInfo->HasAttribute(SPELL_ATTR_EX3_DEATH_PERSISTENT);
+    }
 }
 inline bool IsNonCombatSpell(SpellEntry const *spellInfo)
 {

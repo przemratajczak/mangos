@@ -653,6 +653,8 @@ class MANGOS_DLL_SPEC GameObject : public WorldObject
         void SetTransportPathRotation(QuaternionData rotation);      // transforms(rotates) transport's path
         int64 GetPackedWorldRotation() const { return m_packedRotation; }
 
+        void UpdateRotationFields(float rotation2 = 0.0f, float rotation3 = 0.0f);
+
         // overwrite WorldObject function for proper name localization
         const char* GetNameForLocaleIdx(int32 locale_idx) const;
 

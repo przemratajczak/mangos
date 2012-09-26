@@ -443,6 +443,25 @@ m_isPersistent(false), m_spellAuraHolder(holder), m_classType(type)
     if (!spellproto->HasAttribute(SPELL_ATTR_EX5_START_PERIODIC_AT_APPLY))
         m_periodicTimer = m_modifier.periodictime;
 
+    // some spells that should also tick at apply
+	switch (spellproto->Id)
+	{
+        case 5728: // Stoneclaw Totem
+        case 6397:
+        case 6398:
+        case 6399:
+        case 10425:
+        case 10426:
+        case 25513:
+        case 58583:
+        case 58584:
+        case 58585:
+        case 63298:
+        case 6474: // Earthbind Totem
+        case 8145: // Tremor Totem
+            m_periodicTimer = 0;
+	}
+
     // Calculate CrowdControl damage start value
     if (IsCrowdControlAura(m_modifier.m_auraname))
     {
@@ -2012,7 +2031,21 @@ void Aura::TriggerSpell()
 //                    // Aura of Darkness
 //                    case 71111: break;
 //                    // Ball of Flames Visual
-//                    case 71706: break;
+                    case 71706:
+                    {
+                        // don't "proc" on heroic
+                        if (triggerTarget->GetMap()->GetDifficulty() <= RAID_DIFFICULTY_25MAN_NORMAL)
+                        {
+                            if (SpellAuraHolderPtr holder = triggerTarget->GetSpellAuraHolder(71756))
+                            {
+                                if (holder->GetStackAmount() <= 1)
+                                    triggerTarget->RemoveSpellAuraHolder(holder);
+                                else
+                                    holder->ModStackAmount(-1);
+                            }
+                        }
+                        break;
+                    }
 //                    // Summon Broken Frostmourne
 //                    case 74081: break;
                     default:
@@ -4074,7 +4107,9 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
                     (aurSpellInfo->SpellIconID == 15 && aurSpellInfo->Dispel == 0 &&
                     (aurMechMask & (1 << (MECHANIC_SNARE-1))) == 0))
                 {
-                    continue;
+                    // Aftermath - should be removed by shapeshifting
+                    if ((*iter)->GetId() != 18118)
+                        continue;
                 }
 
                 // All OK, remove aura now
@@ -5164,6 +5199,10 @@ void Aura::HandleAuraModDisarm(bool apply, bool Real)
     if (target->IsInFeralForm())
         return;
 
+    // remove Bladestorm
+    if (target->HasAura(46924, EFFECT_INDEX_0))
+        target->RemoveAurasDueToSpell(46924);
+
     if (apply)
     {
         target->SetAttackTime(BASE_ATTACK,BASE_ATTACK_TIME);
@@ -5864,6 +5903,21 @@ void Aura::HandleModMechanicImmunity(bool apply, bool /*Real*/)
     // Heroic Fury (Intercept cooldown remove)
     else if (apply && GetSpellProto()->Id == 60970 && target->GetTypeId() == TYPEID_PLAYER)
         ((Player*)target)->RemoveSpellCooldown(20252, true);
+
+    // Potent Pheromones (Freya encounter)
+    else if (GetId() == 64321 || GetId() == 62619)
+    {
+        if (apply)
+            HandleAuraModPacifyAndSilence(false, true);
+        else
+        {
+            if (GetId() == 64321 && m_removeMode == AURA_REMOVE_BY_EXPIRE || GetId() == 62619)
+            {
+                if (GetTarget()->HasAura(62532, EFFECT_INDEX_0))
+                    HandleAuraModPacifyAndSilence(true, true);
+            }
+        }
+    }
 }
 
 void Aura::HandleModMechanicImmunityMask(bool apply, bool /*Real*/)
@@ -8442,8 +8496,13 @@ void Aura::HandleSchoolAbsorb(bool apply, bool Real)
                         DoneActualBenefit = caster->SpellBaseDamageBonusDone(GetSpellSchoolMask(spellProto)) * 0.1f;
                     // Ice Barrier
                     else if (spellProto->GetSpellFamilyFlags().test<CF_MAGE_ICE_BARRIER>())
+                    {
                         //+80.67% from +spell bonus
                         DoneActualBenefit = caster->SpellBaseDamageBonusDone(GetSpellSchoolMask(spellProto)) * 0.8067f;
+                        
+                        if (const Aura* glyph = caster->GetDummyAura(63095))    //Glyph of Ice Barrier
+                           DoneActualBenefit *= (glyph->GetModifier()->m_amount+100.0f) / 100.0f;
+                    }
                     break;
                 case SPELLFAMILY_WARLOCK:
                     // Shadow Ward
@@ -8477,7 +8536,7 @@ void Aura::HandleSchoolAbsorb(bool apply, bool Real)
         {
             if (Aura *aur = caster->GetAura(63231, EFFECT_INDEX_0))
             {
-                ((Player*)caster)->SendModifyCooldown(spellProto->Id,-aur->GetSpellProto()->CalculateSimpleValue(EFFECT_INDEX_0)*IN_MILLISECONDS);
+                ((Player*)caster)->SendModifyCooldown(spellProto->Id,-aur->GetSpellProto()->CalculateSimpleValue(EFFECT_INDEX_0)*IN_MILLISECONDS*2);
             }
         }
         // Shield of Runes (Runemaster Molgeim: Ulduar)
@@ -10263,6 +10322,13 @@ void Aura::HandleAuraAddMechanicAbilities(bool apply, bool Real)
         for (int i = 0; i < MAX_OVERRIDE_SPELLS; i++)
             if (uint32 spellId = spellSet->Spells[i])
                 static_cast<Player*>(target)->removeSpell(spellId, false , false, false);
+
+        // Frenzied Bloodthirst (Queen Lana'thel - ICC encounter)
+        if (GetId() == 70877 || GetId() == 71474)
+        {
+            if (m_removeMode == AURA_REMOVE_BY_EXPIRE)
+                target->CastSpell(target, 70923, true); // cast Uncontrollable Frenzy
+        }
     }
 }
 
@@ -10550,6 +10616,9 @@ m_permanent(false), m_isRemovedOnShapeLost(true), m_deleted(false), m_in_use(0)
         case 71564:                                         // Deadly Precision
         case 74396:                                         // Fingers of Frost
         case 70672:                                         // Gaseous Bloat (Putricide)
+        case 72455:
+        case 72832:
+        case 72833:
             m_stackAmount = m_spellProto->StackAmount;
             break;
     }

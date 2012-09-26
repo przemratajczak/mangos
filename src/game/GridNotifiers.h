@@ -719,6 +719,25 @@ namespace MaNGOS
             NearestGameObjectEntryInObjectRangeCheck(NearestGameObjectEntryInObjectRangeCheck const&);
     };
 
+    class AllGameObjectsWithEntryInRangeCheck
+    {
+        public:
+            AllGameObjectsWithEntryInRangeCheck(const WorldObject* pObject, uint32 uiEntry, float fMaxRange) : m_pObject(pObject), m_uiEntry(uiEntry), m_fRange(fMaxRange) {}
+            WorldObject const& GetFocusObject() const { return *m_pObject; }
+            bool operator() (GameObject* pGo)
+            {
+                if (pGo->GetEntry() == m_uiEntry && m_pObject->IsWithinDist(pGo,m_fRange,false))
+                    return true;
+
+                return false;
+            }
+
+        private:
+            const WorldObject* m_pObject;
+            uint32 m_uiEntry;
+            float m_fRange;
+    };
+
     // Success at gameobject in range of xyz, range update for next check (this can be use with GameobjectLastSearcher to find nearest GO)
     class NearestGameObjectEntryInPosRangeCheck
     {

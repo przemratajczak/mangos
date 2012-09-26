@@ -566,6 +566,17 @@ void Spell::EffectSchoolDMG(SpellEffectIndex effect_idx)
                         damage *= exp(-distance/(27.5f));
                         break;
                     }
+                    // Spirit Burst
+                    case 70503:
+                    case 73806:
+                    case 73807:
+                    case 73808:
+                    {
+                        if (m_caster->GetTypeId() == TYPEID_UNIT)
+                            ((Creature*)m_caster)->ForcedDespawn(1000);
+
+                        break;
+                    }
                     // Expunged Gas (Putricide)
                     case 70701:
                     {
@@ -2261,6 +2272,15 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
 
                     return;
                 }
+                case 45692:                                 // Use Tuskarr Torch (for Quest: Burn in Effigy)
+                {
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT)
+                        return;
+                    // let them burn! niah! (flame spell could be wrong one, anyway visual effect is correct)
+                    unitTarget->CastSpell(unitTarget, 64561, true);
+                    ((Creature*)unitTarget)->ForcedDespawn(15000);
+                    return;
+                }        
                 case 45685:                                 // Magnataur On Death 2
                 {
                     m_caster->RemoveAurasDueToSpell(45673);
@@ -3205,6 +3225,15 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                         m_caster->CastSpell(m_caster, 54861, true, m_CastItem);
                     else                                    // Knocked Up   - backfire 5%
                         m_caster->CastSpell(m_caster, 46014, true, m_CastItem);
+
+                    if (m_caster->GetTypeId() == TYPEID_PLAYER)
+                    {
+                        Player* pPlayer = ((Player*)m_caster);
+                        // Nitro Boosts - drop BG flag
+                        if(pPlayer->InBattleGround() && (pPlayer->HasAura(23335) || pPlayer->HasAura(23333) || pPlayer->HasAura(34976)))
+                        if(BattleGround *bg = pPlayer->GetBattleGround())
+                        bg->EventPlayerDroppedFlag(pPlayer);
+                    }
 
                     return;
                 }
@@ -8690,9 +8719,17 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     if (!unitTarget)
                         return;
 
-                    if (roll_chance_i(25))                  // chance unknown, using 25, Script Effect Cast Upset Tummy
-                        unitTarget->CastSpell(unitTarget, 42966, true);
-
+                    if (Aura* aura = unitTarget->GetAura(42919, EFFECT_INDEX_0))
+                    {
+                        if (aura->GetAuraMaxDuration() - aura->GetAuraDuration() < 1700)
+                        {                                   // remove Tricky Treat speed boost aura, trigger Upset Tummy
+                            unitTarget->RemoveAurasDueToSpell(42919);
+                            unitTarget->CastSpell(unitTarget, 42966, true);
+                            return;
+                        }
+                    }
+                                                            // Tricky Treat speed boost aura
+                    unitTarget->CastSpell(unitTarget, 42919, true);
                     return;
                 }
                 case 44455:                                 // Character Script Effect Reverse Cast
@@ -10179,6 +10216,29 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     }
                     return;
                 }
+                case 69057:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 70826:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 72088:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 72089:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 73142:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 73143:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 73144:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                case 73145:                                 // Bone Spike Graveyard (Lord Marrowgar)
+                {
+                    if (unitTarget)
+                    {
+                        float x, y, z;
+                        unitTarget->GetPosition(x, y, z);
+
+                        if (Creature *pSpike = unitTarget->SummonCreature(38711, x, y, z, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 2000))
+                        {
+                            unitTarget->CastSpell(pSpike, 46598, true); // enter vehicle
+                            pSpike->CastSpell(unitTarget, m_spellInfo->CalculateSimpleValue(EFFECT_INDEX_1), true, 0, 0, m_caster->GetObjectGuid(), m_spellInfo);
+                        }
+                    }
+
+                    return;
+                }
                 case 67533:                                 // Shoot Air Rifle
                 {
                     if (!unitTarget)
@@ -10312,6 +10372,15 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                         }
                     }
                 return;
+                }
+                case 66336:                                 // Mistress' Kiss (Trial of the Crusader, ->
+                case 67076:                                 // -> Lord Jaraxxus encounter, all difficulties)
+                case 67077:                                 // ----- // -----
+                case 67078:                                 // ----- // -----
+                {
+                    if (unitTarget)
+                        unitTarget->CastSpell(unitTarget, 66334, true);
+                    return;
                 }
                 case 69140:                                 // Coldflame (random target selection)
                 {
@@ -10451,6 +10520,38 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     m_caster->CastSpell(m_caster, m_spellInfo->CalculateSimpleValue(EFFECT_INDEX_0), true);
                     // second is on random side
                     m_caster->CastSpell(m_caster, m_spellInfo->CalculateSimpleValue(SpellEffectIndex(urand(1, 2))), true);
+                    return;
+                }
+                case 71446:                                 // Twilight Bloodbolt 10N
+                {
+                    if (!unitTarget)
+                        return;
+
+                    unitTarget->CastSpell(unitTarget, 71447, true, 0, 0, m_caster->GetObjectGuid(), m_spellInfo);
+                    return;
+                }
+                case 71478:                                 // Twilight Bloodbolt 25N
+                {
+                    if (!unitTarget)
+                        return;
+
+                    unitTarget->CastSpell(unitTarget, 71481, true);
+                    return;
+                }
+                case 71479:                                 // Twilight Bloodbolt 10H
+                {
+                    if (!unitTarget)
+                        return;
+
+                    unitTarget->CastSpell(unitTarget, 71482, true);
+                    return;
+                }
+                case 71480:                                 // Twilight Bloodbolt 25H
+                {
+                    if (!unitTarget)
+                        return;
+
+                    unitTarget->CastSpell(unitTarget, 71483, true);
                     return;
                 }
                 case 71620:                                 // Tear Gas Cancel (Putricide)
@@ -11919,8 +12020,17 @@ void Spell::EffectKnockBack(SpellEffectIndex eff_idx)
     if (unitTarget->IsInWater())
         return;
 
+    //Can't knockback bosses
+    if(unitTarget->GetTypeId() == TYPEID_UNIT)
+       if(((Creature*)unitTarget)->GetCreatureInfo()->rank == CREATURE_ELITE_WORLDBOSS)
+           return;
+
     // Can't knockback rooted target
     if (unitTarget->hasUnitState(UNIT_STAT_ROOT))
+        return;
+
+    // Bladestorm should provide immunity to knockbacks
+    if (unitTarget->HasAura(46924, EFFECT_INDEX_1))
         return;
 
     // Can't knockback BG vehicles

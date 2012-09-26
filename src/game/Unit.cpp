@@ -3472,8 +3472,14 @@ SpellMissInfo Unit::MeleeSpellHitResult(Unit *pVictim, SpellEntry const *spell)
         return SPELL_MISS_NONE;
     }
 
+    // some spells cannot be dodged, parried or blocked
+    if (spell->Attributes & SPELL_ATTR_IMPOSSIBLE_DODGE_PARRY_BLOCK)
+    {
+        canDodge = false;
+        canParry = false;
+    }
     // Check for attack from behind
-    if (from_behind)
+    else if (from_behind)
     {
         // Can`t dodge from behind in PvP (but its possible in PvE)
         if (GetTypeId() == TYPEID_PLAYER && pVictim->GetTypeId() == TYPEID_PLAYER)
@@ -3629,6 +3635,9 @@ SpellMissInfo Unit::MagicSpellHitResult(Unit *pVictim, SpellEntry const *spell)
         //    deflect_chance = int32(deflect_chance * (pVictim->GetTotalAuraMultiplier(SPELL_AURA_MOD_PARRY_FROM_BEHIND_PERCENT)) - 1);
 
         tmp += deflect_chance;
+        // Chaos Bolt cannot be deflected
+        if (spell->SpellFamilyName == SPELLFAMILY_WARLOCK && spell->SpellIconID == 3178)
+            return SPELL_MISS_NONE;
         if (rand < tmp)
             return SPELL_MISS_DEFLECT;
     }
@@ -13470,6 +13479,14 @@ void Unit::OnRelocated()
         UpdateObjectVisibility();
     }
     ScheduleAINotify(World::GetRelocationAINotifyDelay());
+}
+
+void Unit::GetGameObjectListWithEntryInGrid(std::list<GameObject*>& lList , WorldObject* pSource, uint32 uiEntry, float fMaxSearchRange)
+{
+    MaNGOS::AllGameObjectsWithEntryInRangeCheck check(pSource, uiEntry, fMaxSearchRange);
+    MaNGOS::GameObjectListSearcher<MaNGOS::AllGameObjectsWithEntryInRangeCheck> searcher(lList, check);
+
+    Cell::VisitGridObjects(pSource, searcher, fMaxSearchRange);
 }
 
 ObjectGuid const& Unit::GetCreatorGuid() const

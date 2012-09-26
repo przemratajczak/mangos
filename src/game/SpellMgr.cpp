@@ -866,6 +866,8 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                         return true;
                     // let check by target modes (for Amplify Magic cases/etc)
                     break;
+                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
+                    return (spellproto->CalculateSimpleValue(effIndex) < 0);
                 case SPELL_AURA_MOD_SPELL_CRIT_CHANCE:
                 case SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT:
                 case SPELL_AURA_MOD_DAMAGE_PERCENT_DONE:
@@ -1014,6 +1016,8 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                     }
                     break;
                 }
+                case SPELL_EFFECT_FORCE_CAST:   // positive in all cases?
+                    return true;
                 default:
                     break;
             }
@@ -2850,6 +2854,7 @@ bool SpellMgr::IsStackableSpellAuraHolder(SpellEntry const* spellInfo)
             case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
             case SPELL_AURA_POWER_BURN_MANA:
             case SPELL_AURA_CONTROL_VEHICLE:
+            case SPELL_AURA_SCHOOL_ABSORB:
             case SPELL_AURA_MOD_STUN:
                 return true;
         }

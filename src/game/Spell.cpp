@@ -852,6 +852,17 @@ void Spell::prepareDataForTriggerSystem()
                     m_canTrigger = true;
                 break;
             case SPELLFAMILY_WARRIOR:
+                // Bladestorm
+                // if (m_spellInfo->SpellFamilyFlags.test<CF_WARRIOR_BLADESTORM>())
+                if (m_spellInfo->Id == 50622 || m_spellInfo->Id == 44949)
+                    m_canTrigger = true;
+                break;
+            case SPELLFAMILY_SHAMAN:
+                // Earthgrab, Entangling Roots
+                if (m_spellInfo->Id == 64695 || m_spellInfo->SpellFamilyFlags & UI64LIT(0x0000000000000200))
+                    m_canTrigger = true;
+                break;
+            case SPELLFAMILY_GENERIC:
                 break;
             default:
                 break;
@@ -1066,8 +1077,8 @@ void Spell::AddTarget(ObjectGuid targetGuid, SpellEffectIndex effIndex)
             sLog.outError("Spell::AddTarget currently this type of targets (%s) supported by another way!", targetGuid.GetString().c_str());
             break;
         }
-        HIGHGUID_INSTANCE:
-        HIGHGUID_GROUP:  
+        case HIGHGUID_INSTANCE:
+        case HIGHGUID_GROUP:  
         default:
             sLog.outError("Spell::AddTarget unhandled type of spell target (%s)!", targetGuid.GetString().c_str());
             break;
@@ -1486,10 +1497,41 @@ void Spell::DoSpellHitOnUnit(Unit *unit, uint32 effectMask)
                 && (!IsPositiveSpell(m_spellInfo->Id) || IsNonPositiveSpell(m_spellInfo))
                 && realCaster->isVisibleForOrDetect(unit, unit, false))
             {
+                 switch (m_spellInfo->Id)
+                {
+                    case 32375:
+                    case 32592:
+                    case 39897:
+                    case 72734:
+                        break;
+                    default:
+                        unit->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
+                        break;
+                }
+
                 if (!unit->IsStandState() && !unit->hasUnitState(UNIT_STAT_STUNNED))
                     unit->SetStandState(UNIT_STAND_STATE_STAND);
 
                 unit->AttackedBy(realCaster);
+            }
+
+            // Sap should remove victim's stealth
+            if (m_spellInfo->Mechanic == MECHANIC_SAPPED)
+                unit->RemoveSpellsCausingAura(SPELL_AURA_MOD_STEALTH);
+
+            // some AoE spells don't break stealth but they set in combat with targets
+            // Mass Dispel
+            if (m_spellInfo->Id == 32592)
+            {
+                if (!unit->isInCombat() && unit->GetTypeId() != TYPEID_PLAYER && ((Creature*)unit)->AI())
+                    ((Creature*)unit)->AI()->AttackedBy(realCaster);
+
+                unit->AddThreat(realCaster);
+                unit->SetInCombatWith(realCaster);
+                realCaster->SetInCombatWith(unit);
+
+                if (Player *attackedPlayer = unit->GetCharmerOrOwnerPlayerOrPlayerItself())
+                    realCaster->SetContestedPvP(attackedPlayer);
             }
         }
         else
@@ -2239,6 +2281,128 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     }
                 }
             }
+           //Dawn of Light - don't hit death knights
+            if (m_spellInfo->Id == 53644)
+            {
+                if (!targetUnitMap.empty() )
+                {
+                    for (UnitList::iterator iter = targetUnitMap.begin(); iter != targetUnitMap.end(); ++iter)
+                    {
+                        if ((*iter)->GetTypeId() == TYPEID_PLAYER)
+                        {
+                            targetUnitMap.erase(iter);
+                            targetUnitMap.sort();
+                            iter = targetUnitMap.begin();
+                        }
+                        else
+                        {
+                            switch ((*iter)->GetEntry() )
+                            {
+                                case 29173: // Darion Mograine
+                                case 29199: // Koltira Deathweaver
+                                case 29204: // Orbaz Bloodbane
+                                case 29200: // Thassarian
+                                    targetUnitMap.erase(iter);
+                                    targetUnitMap.sort();
+                                    iter = targetUnitMap.begin();
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Molten Fury - Sartharion encounter
+            // target Lava Blazes only
+            if (m_spellInfo->Id == 60430)
+            {
+                std::list<Unit*> tempTargetUnitMap;
+                targetUnitMap.clear();
+                FillAreaTargets(tempTargetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_NOT_HOSTILE);
+                if (!tempTargetUnitMap.empty())
+                    for (UnitList::const_iterator iter = tempTargetUnitMap.begin(); iter != tempTargetUnitMap.end(); ++iter)
+                        if ((*iter) && (*iter)->GetEntry() == 30643)
+                            targetUnitMap.push_back(*iter);
+                break;
+            }
+            // Berserk - Sartharion encounter
+            // target dragon bosses only
+            if (m_spellInfo->Id == 61632)
+            {
+                std::list<Unit*> tempTargetUnitMap;
+                targetUnitMap.clear();
+                FillAreaTargets(tempTargetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_FRIENDLY);
+                if (!tempTargetUnitMap.empty())
+                    for (UnitList::const_iterator iter = tempTargetUnitMap.begin(); iter != tempTargetUnitMap.end(); ++iter)
+                        switch ((*iter)->GetEntry() )
+                            {
+                                case 28860: // Sartharion
+                                case 30452: // Tenebron
+                                case 30451: // Shadron
+                                case 30449: // Vesperon
+                                    targetUnitMap.push_back(*iter);
+                                default:
+                                    break;
+                            }
+                break;
+            }
+             // Decimate - Gluth encounter
+            // target everything in the room except the caster
+            if (m_spellInfo->Id == 28374)
+            {
+                targetUnitMap.clear();
+                FillAreaTargets(targetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_ALL);
+            }
+            // Activate Constructs (remove all except inactive constructs)
+            if (m_spellInfo->Id == 62488 && !targetUnitMap.empty() )
+            {
+                std::list<Unit*> tempTargetUnitMap;
+                targetUnitMap.clear();
+                FillAreaTargets(tempTargetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_NOT_HOSTILE);
+
+                for (std::list<Unit*>::iterator itr = tempTargetUnitMap.begin(),next; itr != tempTargetUnitMap.end(); itr++)
+                {
+                    if ((*itr) && (*itr)->GetEntry() == 33121 && (*itr)->HasAura(62468, EFFECT_INDEX_0))
+                        targetUnitMap.push_back(*itr);
+                }
+            }
+            // Heat (remove all except active iron constructs)
+            if (m_spellInfo->Id == 62343)
+            {
+                std::list<Unit*> tempTargetUnitMap;
+                targetUnitMap.clear();
+                FillAreaTargets(tempTargetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_ALL);
+
+                for (std::list<Unit*>::iterator itr = tempTargetUnitMap.begin(),next; itr != tempTargetUnitMap.end(); itr++)
+                {
+                    if ((*itr) && (*itr)->GetEntry() == 33121 &&
+                        !(*itr)->HasAura(62468) && !(*itr)->HasAura(62373) &&
+                        !(*itr)->HasAura(62382) && !(*itr)->HasAura(67114)
+                        )
+                        targetUnitMap.push_back(*itr);
+                }
+
+                return;
+            }
+            // Supercharge (Iron Council: Ulduar)
+            if (m_spellInfo->Id == 61920)
+            {
+                std::list<Unit*> tempTargetUnitMap;
+                targetUnitMap.clear();
+                FillAreaTargets(tempTargetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_NOT_HOSTILE);
+
+                for (std::list<Unit*>::iterator itr = tempTargetUnitMap.begin(),next; itr != tempTargetUnitMap.end(); itr++)
+                {
+                    if ((*itr) &&
+                        ((*itr)->GetEntry() == 32867 || // Steelbreaker
+                        (*itr)->GetEntry() == 32927 || // Runemaster Molgeim
+                        (*itr)->GetEntry() == 32857) // Stormcaller Brundir
+                        )
+                        targetUnitMap.push_back(*itr);
+                }
+
+                return;
+            }
 
             // exclude caster
             targetUnitMap.remove(m_caster);
@@ -2554,6 +2718,17 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             else if (m_spellInfo->Id == 71641 || m_spellInfo->Id == 71610)
             {
                 FillRaidOrPartyHealthPriorityTargets(targetUnitMap, m_caster, m_caster, radius, 1, true, false, false);
+            }
+            // Gravity Bomb, Searing Light
+            else if (m_spellInfo->SpellIconID == 3757 || m_spellInfo->SpellIconID == 3021)
+            {
+               // targets are checked with original caster, which is in fact hostile, not friendly
+                if (Unit *pTarget = m_targets.getUnitTarget())
+                {
+                    FillAreaTargets(targetUnitMap, radius, PUSH_TARGET_CENTER, SPELL_TARGETS_FRIENDLY, pTarget);
+                    targetUnitMap.remove(pTarget); // the target of aura triggering this spell
+                    return;
+                }
             }
             else
                 FillAreaTargets(targetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_FRIENDLY);
@@ -3121,8 +3296,34 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                         case SPELL_AURA_MOD_ATTACK_POWER:
                         case SPELL_AURA_MOD_HEALING_DONE:
                         case SPELL_AURA_MOD_DAMAGE_DONE:
-                            targetUnitMap.push_back(m_caster);
+                           targetUnitMap.push_back(m_caster);
+                           break;
+                           case SPELL_AURA_DUMMY:
+                        {
+                                SetTargetMap(effIndex, m_spellInfo->EffectImplicitTargetB[effIndex], targetUnitMap);
+                                return;
+                        }
+                        case SPELL_AURA_PERIODIC_DAMAGE:
+                        {
+                            switch (m_spellInfo->Id)
+                            {
+                                case 63024: // Gravity Bomb (XT-002)
+                                case 64234: // Gravity Bomb (h) (XT-002)
+                                case 63018: // Searing Light (XT-002)
+                                case 65121: // Searing Light (h) (XT-002)
+                                {
+                                    if (Unit *pTarget = m_targets.getUnitTarget())
+                                    {
+                                        targetUnitMap.clear();
+                                        targetUnitMap.push_back(pTarget);
+                                        return;
+                                    }
+                                }
+                                default:
+                                    break;
+                            }
                             break;
+                        }
                         default:                            // apply to target in other case
                             if (m_targets.getUnitTarget())
                                 targetUnitMap.push_back(m_targets.getUnitTarget());
@@ -3273,6 +3474,10 @@ void Spell::prepare(SpellCastTargets const* targets, Aura const* triggeredByAura
 
     // Fill cost data
     m_powerCost = CalculatePowerCost(m_spellInfo, m_caster, this, m_CastItem);
+
+    // Slam (hacky hacky hack, double rage cost hackfix)
+    if (m_spellInfo->Id == 50782)
+        m_powerCost = 0;
 
     SpellCastResult result = CheckCast(true);
     if (result != SPELL_CAST_OK && !IsAutoRepeat())          //always cast autorepeat dummy for triggering
@@ -5440,6 +5645,13 @@ SpellCastResult Spell::CheckCast(bool strict)
                 if (target->HasAura(61987))                 // Avenging Wrath Marker
                     return SPELL_FAILED_CASTER_AURASTATE;
             }
+
+            // Vampiric Bite (Lana'thel encounter)
+            if (m_spellInfo->Id == 70946 || m_spellInfo->Id == 71475 ||
+                m_spellInfo->Id == 71476 || m_spellInfo->Id == 71477)
+            {
+                return SPELL_FAILED_BAD_TARGETS;
+             }
         }
 
         // check pet presents
@@ -7785,6 +7997,70 @@ bool Spell::CheckTarget(Unit* target, SpellEffectIndex eff )
             return false;
     }
 
+    // Checkout if target is behing particular object
+    uint32 uiObjectEntry = 0;
+
+    switch(m_spellInfo->Id)
+    {
+        case 68786:     // Permafrost (Garfrost)
+        case 70336:     // Permafrost Heroic (Garfrost)
+            uiObjectEntry = 196485;
+            break;
+        case 69845:     // Frost Bomb (Sindragosa)
+        case 71053:
+        case 71054:
+        case 71055:
+        case 70127:     // Mystic Buffet (Sindragosa)
+        case 72528:
+        case 72529:
+        case 72530:
+            uiObjectEntry = 201722;
+            break;
+    }
+
+    if (uiObjectEntry)
+    {
+       // Description:
+        // code check out if player is hidden behind GO in circle with diameter equal to GO size
+        // with center placed on the perimeter of GO
+        //     C<- caster
+        //    / \<- cone of spell
+        //   /   \
+        //  / (o) \<- shelter object
+        // /  (T)  \<- target in safty circle
+
+        std::list<GameObject*>lObjectList;
+        target->GetGameObjectListWithEntryInGrid(lObjectList, target, uiObjectEntry, target->GetDistance2d(m_caster));
+        float fTargetX, fTargetY, fTargetZ;
+        float fCasterX, fCasterY, fCasterZ;
+        target->GetPosition(fTargetX, fTargetY, fTargetZ);
+        m_caster->GetPosition(fCasterX, fCasterY, fCasterZ);
+        for (std::list<GameObject*>::iterator itr = lObjectList.begin(); itr != lObjectList.end(); ++itr)
+        {
+            float fDistBlock = m_caster->GetDistance2d(*itr);
+            float fDistVictim = m_caster->GetDistance2d(target);
+            float fDistVictimToBlock = target->GetDistance2d(*itr);
+
+            // quick check
+            if (fDistBlock > fDistVictim)
+                continue;
+
+            float fObjectSize = (*itr)->GetGOInfo()->size;
+
+            // Ice Block in Sindragosa ecounter - size is very small, so we have to use bigger values
+            if (uiObjectEntry == 201722)
+                fObjectSize = 4.0f;
+
+            // not too accurate but fast, good enough for now
+            // small part of ground behind and on sides of the obstacle
+            if (fDistVictimToBlock < fObjectSize + 5.0f &&
+                fDistVictim > fDistBlock + fObjectSize - 2.0f)
+            {
+                return false;
+            }
+        }
+    }
+
     // Check Sated & Exhaustion debuffs
     if (((m_spellInfo->Id == 2825) && (target->HasAura(57724) || target->HasAura(57723))) ||
         ((m_spellInfo->Id == 32182) && (target->HasAura(57724)|| target->HasAura(57723))))
@@ -8290,7 +8566,7 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
                 return false;
 
             Unit* unitTarget = m_targets.getUnitTarget();
-            if (unitTarget && (unitTarget->GetEntry() == 26125 || unitTarget->GetEntry() == 24207) &&
+            if (unitTarget && (unitTarget->GetEntry() == 26125 || unitTarget->GetEntry() == 24207 || unitTarget->GetEntry() == 27829) &&
                 unitTarget->GetObjectGuid().IsPet() && unitTarget->GetOwnerGuid() == m_caster->GetObjectGuid())
             {
                 targetUnitMap.push_back(unitTarget);
@@ -8305,7 +8581,7 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
 
                     for (GuardianPetList::const_iterator itr = petList->begin(); itr != petList->end(); ++itr)
                         if (Unit* ghoul = m_caster->GetMap()->GetUnit(*itr))
-                            if (ghoul->GetEntry() == 24207 || ghoul->GetEntry() == 26125)
+                            if (ghoul->GetEntry() == 24207 || ghoul->GetEntry() == 26125|| ghoul->GetEntry() == 27829)
                                 targetUnitMap.push_back(ghoul);
 
                     if (targetUnitMap.size() > 1)
@@ -8699,6 +8975,26 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
         case 73778:
         {
             FillAreaTargets(targetUnitMap, radius, PUSH_SELF_CENTER, SPELL_TARGETS_AOE_DAMAGE, GetAffectiveCaster());
+            break;
+        }
+        case 69278:                                 // Gas spore - 10 (Festergut)
+        case 71221:                                 // Gas spore - 25 (Festergut)
+        {
+            if (m_spellInfo->Id == 71221)
+                unMaxTargets = 3;
+            else
+                unMaxTargets = 2;
+
+            UnitList tmpUnitMap;
+            FillAreaTargets(tmpUnitMap, radius, PUSH_INHERITED_CENTER, SPELL_TARGETS_AOE_DAMAGE);
+            if (!tmpUnitMap.empty())
+            {
+                for (UnitList::const_iterator itr = tmpUnitMap.begin(); itr != tmpUnitMap.end(); ++itr)
+                {
+                    if ((*itr) && (*itr)->GetTypeId() == TYPEID_PLAYER)
+                        targetUnitMap.push_back(*itr);
+                }
+            }
             break;
         }
         case 69298: // Cancel Resistant To Blight (Festergut)

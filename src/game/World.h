@@ -89,7 +89,8 @@ enum WorldTimers
 /// Configuration elements
 enum eConfigUInt32Values
 {
-    CONFIG_UINT32_COMPRESSION = 0,
+    CONFIG_UINT32_REALMID = 0,
+    CONFIG_UINT32_COMPRESSION,
     CONFIG_UINT32_INTERVAL_SAVE,
     CONFIG_UINT32_INTERVAL_GRIDCLEAN,
     CONFIG_UINT32_INTERVAL_MAPUPDATE,
@@ -408,6 +409,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_MMAP_ENABLED,
     CONFIG_BOOL_RESET_DUEL_AREA_ENABLED,
     CONFIG_BOOL_PET_ADVANCED_AI,
+    CONFIG_BOOL_PET_ADVANCED_AI_SLACKER,
     CONFIG_BOOL_RESILENCE_ALTERNATIVE_CALCULATION,
     CONFIG_BOOL_BLINK_ANIMATION_TYPE,
     CONFIG_BOOL_FACTION_AND_RACE_CHANGE_WITHOUT_RENAMING,
@@ -781,8 +783,6 @@ class World
         std::set<uint32> disabledMapIdForDungeonFinder; // set of MapIds which are disabled for DungeonFinder
 
 };
-
-extern uint32 realmID;
 
 #define sWorld MaNGOS::Singleton<World>::Instance()
 #endif

@@ -220,12 +220,8 @@ bool VehicleKit::AddPassenger(Unit* passenger, int8 seatId)
 
     if (passenger->GetTypeId() == TYPEID_PLAYER)
     {
-        ((Player*)passenger)->GetCamera().SetView(m_pBase);
-
-        WorldPacket data(SMSG_FORCE_MOVE_ROOT, 8+4);
-        data << passenger->GetPackGUID();
-        data << uint32((passenger->m_movementInfo.GetVehicleSeatFlags() & SEAT_FLAG_CAN_CAST) ? 2 : 0);
-        passenger->SendMessageToSet(&data, true);
+        ((Player*)passenger)->SetViewPoint(m_pBase);
+        passenger->SetRoot(true);
     }
 
     if (seat->second.IsProtectPassenger())
@@ -235,7 +231,6 @@ bool VehicleKit::AddPassenger(Unit* passenger, int8 seatId)
             case 33651:                                     // VX 001
             case 33432:                                     // Leviathan MX
             case 33118:                                     // Ignis (Ulduar)
-            case 32934:                                     // Kologarn Right Arm (Ulduar)
             case 30234:                                     // Nexus Lord's Hover Disk (Eye of Eternity, Malygos Encounter)
             case 30248:                                     // Scion's of Eternity Hover Disk (Eye of Eternity, Malygos Encounter)
                 break;
@@ -292,16 +287,12 @@ bool VehicleKit::AddPassenger(Unit* passenger, int8 seatId)
 
         if (m_pBase->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE))
         {
-            WorldPacket data2(SMSG_FORCE_MOVE_ROOT, 8+4);
-            data2 << m_pBase->GetPackGUID();
-            data2 << (uint32)(2);
-            m_pBase->SendMessageToSet(&data2,false);
+            m_pBase->SetRoot(true);
         }
-        else if (passenger->m_movementInfo.GetMovementFlags() & MOVEFLAG_WALK_MODE)
-            ((Creature*)m_pBase)->SetWalk(true);
-        else
-            ((Creature*)m_pBase)->SetWalk(false);
-
+        else if (passenger->IsWalking() && !GetBase()->IsWalking())
+            ((Creature*)m_pBase)->SetWalk(true, true);
+        else if (!passenger->IsWalking() && GetBase()->IsWalking())
+            ((Creature*)m_pBase)->SetWalk(false, true);
     }
     else if ((seatInfo->m_flags & SEAT_FLAG_FREE_ACTION) || (seatInfo->m_flags & SEAT_FLAG_CAN_ATTACK))
     {
@@ -384,12 +375,9 @@ void VehicleKit::RemovePassenger(Unit* passenger, bool dismount)
     if (passenger->GetTypeId() == TYPEID_PLAYER)
     {
         Player* player = (Player*)passenger;
-        player->GetCamera().ResetView();
+        player->SetViewPoint(NULL);
 
-        WorldPacket data(SMSG_FORCE_MOVE_UNROOT, 8+4);
-        data << passenger->GetPackGUID();
-        data << uint32(0);
-        passenger->SendMessageToSet(&data, true);
+        passenger->SetRoot(false);
 
         player->SetMover(player);
         player->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ROOT);

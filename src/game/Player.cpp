@@ -381,7 +381,7 @@ void TradeData::SetAccepted(bool state, bool crosssend /*= false*/)
 
 //== Player ====================================================
 
-Player::Player (WorldSession *session): Unit(), m_mover(this), m_camera(this), m_achievementMgr(this), m_reputationMgr(this)
+Player::Player (WorldSession *session): Unit(), m_mover(this), m_camera(NULL), m_achievementMgr(this), m_reputationMgr(this)
 {
     m_speakTime = 0;
     m_speakCount = 0;
@@ -578,6 +578,8 @@ Player::Player (WorldSession *session): Unit(), m_mover(this), m_camera(this), m
     SetPendingBind(NULL, 0);
     m_LFGState = new LFGPlayerState(this);
 
+    m_camera = new Camera(*this);
+
     m_cachedGS = 0;
 }
 
@@ -625,6 +627,7 @@ Player::~Player ()
     delete m_runes;
     delete m_anticheat;
     delete m_LFGState;
+    delete m_camera;
 
     // Playerbot mod
     if (m_playerbotAI)
@@ -646,7 +649,7 @@ void Player::CleanupsBeforeDelete()
     if (m_uint32Values)                                      // only for fully created Object
     {
         TradeCancel(false);
-        DuelComplete(DUEL_INTERUPTED);
+        DuelComplete(DUEL_INTERRUPTED);
     }
 
     // notify zone scripts for player logout
@@ -1717,35 +1720,35 @@ uint8 Player::GetChatTag() const
     return tag;
 }
 
-bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientation, uint32 options)
+bool Player::TeleportTo(WorldLocation const& loc, uint32 options)
 {
-    if (!MapManager::IsValidMapCoord(mapid, x, y, z, orientation))
+    if (!MapManager::IsValidMapCoord(loc))
     {
-        sLog.outError("TeleportTo: invalid map %d or absent instance template.", mapid);
+        sLog.outError("TeleportTo: invalid map %d or absent instance template.", loc.mapid);
         return false;
     }
 
-    if (GetMapId() != mapid)
+    if (GetMapId() != loc.mapid)
     {
         if (!(options & TELE_TO_CHECKED))
         {
-            if (!CheckTransferPossibility(mapid))
+            if (!CheckTransferPossibility(loc.mapid))
             {
                 if (GetTransport())
                     TeleportToHomebind();
 
-                DEBUG_LOG("Player::TeleportTo %s is NOT teleported to map %u (requirements check failed)", GetName(), mapid);
+                DEBUG_LOG("Player::TeleportTo %s is NOT teleported to map %u (requirements check failed)", GetName(), loc.mapid);
 
                 return false;                                       // normal client can't teleport to this map...
             }
             else
                 options |= TELE_TO_CHECKED;
         }
-        DEBUG_LOG("Player::TeleportTo %s is being far teleported to map %u", GetName(), mapid);
+        DEBUG_LOG("Player::TeleportTo %s is being far teleported to map %u %s", GetName(), loc.mapid, IsBeingTeleportedFar() ? "(stage 2)" : "");
     }
     else
     {
-        DEBUG_LOG("Player::TeleportTo %s is being near teleported to map %u", GetName(), mapid);
+        DEBUG_LOG("Player::TeleportTo %s is being near teleported to map %u", GetName(), loc.mapid, IsBeingTeleportedNear() ? "(stage 2)" : "");
     }
 
     // preparing unsummon pet if lost (we must get pet before teleportation or will not find it later)
@@ -1756,11 +1759,11 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
     if (GetPlayerbotMgr())
         GetPlayerbotMgr()->Stay();
 
-    MapEntry const* mEntry = sMapStore.LookupEntry(mapid);
+    MapEntry const* mEntry = sMapStore.LookupEntry(loc.mapid);
 
     if (!mEntry)
     {
-        sLog.outError("TeleportTo: invalid map entry (id %d). possible disk or memory error.", mapid);
+        sLog.outError("TeleportTo: invalid map entry (id %d). possible disk or memory error.", loc.mapid);
         return false;
     }
 
@@ -1769,10 +1772,11 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
     if (!InBattleGround() && mEntry->IsBattleGroundOrArena())
         return false;
 
-    // client without expansion support
+    if (!GetMap())
+        options |= TELE_TO_NODELAY;
 
     if (Group* grp = GetGroup())
-        grp->SetPlayerMap(GetObjectGuid(), mapid);
+        grp->SetPlayerMap(GetObjectGuid(), loc.mapid);
 
     // if we were on a transport, leave
     if (!(options & TELE_TO_NOT_LEAVE_TRANSPORT) && m_transport)
@@ -1790,7 +1794,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
     // The player was ported to another map and looses the duel immediately.
     // We have to perform this check before the teleport, otherwise the
     // ObjectAccessor won't find the flag.
-    if (duel && GetMapId() != mapid)
+    if (duel && GetMapId() != loc.mapid)
         if (GetMap()->GetGameObject(GetGuidValue(PLAYER_DUEL_ARBITER)))
             DuelComplete(DUEL_FLED);
 
@@ -1798,10 +1802,21 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
     m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
     DisableSpline();
 
-    if (GetMapId() == mapid && !m_transport)
+    if (GetMapId() == loc.mapid && !m_transport)
     {
         //lets reset far teleport flag if it wasn't reset during chained teleports
         SetSemaphoreTeleportFar(false);
+
+        // try preload grid, targeted for teleport
+        if (!(options & TELE_TO_NODELAY) && !GetMap()->PreloadGrid(loc.coord_x, loc.coord_y))
+        {
+            // If loading grid not finished, delay teleport on one update tick
+            AddEvent(new TeleportDelayEvent(*this, loc, options),
+                sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE));
+            DEBUG_LOG("Player::TeleportTo grid (map %u, instance %u, X%f Y%f) not fully loaded, near teleport %s delayed.", loc.mapid, GetInstanceId(), loc.coord_x, loc.coord_y, GetName());
+            return true;
+        }
+
         //setup delayed teleport flag
         //if teleport spell is casted in Unit::Update() func
         //then we need to delay it until update process will be finished
@@ -1809,7 +1824,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         {
             SetSemaphoreTeleportNear(true);
             //lets save teleport destination for player
-            m_teleport_dest = WorldLocation(mapid, x, y, z, orientation);
+            m_teleport_dest = loc;
             m_teleport_options = options;
             return true;
         }
@@ -1817,7 +1832,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         if (!(options & TELE_TO_NOT_UNSUMMON_PET))
         {
             //same map, only remove pet if out of range for new position
-            if (pet && !pet->IsWithinDist3d(x, y, z, GetMap()->GetVisibilityDistance()))
+            if (pet && !pet->IsWithinDist3d(loc.x, loc.y, loc.z, GetMap()->GetVisibilityDistance()))
                 UnsummonPetTemporaryIfAny();
         }
 
@@ -1825,8 +1840,8 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
             CombatStop();
 
         // this will be used instead of the current location in SaveToDB
-        m_teleport_dest = WorldLocation(mapid, x, y, z, orientation);
-        SetFallInformation(0, z);
+        m_teleport_dest = loc;
+        SetFallInformation(0, loc.coord_z);
 
         // code for finish transfer called in WorldSession::HandleMovementOpcodes()
         // at client packet MSG_MOVE_TELEPORT_ACK
@@ -1835,7 +1850,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         if (!GetSession()->PlayerLogout())
         {
             WorldPacket data;
-            BuildTeleportAckMsg(data, x, y, z, orientation);
+            BuildTeleportAckMsg(data, loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation);
             GetSession()->SendPacket(&data);
         }
     }
@@ -1847,17 +1862,40 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
 
         // Check enter rights before map getting to avoid creating instance copy for player
         // this check not dependent from map instance copy and same for all instance copies of selected map
-        if (!sMapMgr.CanPlayerEnter(mapid, this))
+        if (!sMapMgr.CanPlayerEnter(loc.mapid, this))
             return false;
 
         // If the map is not created, assume it is possible to enter it.
         // It will be created in the WorldPortAck.
-        DungeonPersistentState* state = GetBoundInstanceSaveForSelfOrGroup(mapid);
-        Map *map = sMapMgr.FindMap(mapid, state ? state->GetInstanceId() : 0);
+        DungeonPersistentState* state = GetBoundInstanceSaveForSelfOrGroup(loc.mapid);
+        Map* map = sMapMgr.FindMap(loc.mapid, state ? state->GetInstanceId() : loc.instance);
         if (!map ||  map->CanEnter(this))
         {
             //lets reset near teleport flag if it wasn't reset during chained teleports
             SetSemaphoreTeleportNear(false);
+
+            // try create map before trying teleport on this map
+            if (!map)
+            {
+                if (mEntry->Instanceable() && loc.instance)
+                    map = sMapMgr.FindMap(loc.mapid, loc.instance);
+                else
+                    map = sMapMgr.CreateMap(loc.mapid, this);
+
+                MANGOS_ASSERT(map);
+            }
+
+            // try preload grid, targeted for teleport
+            if (!(options & TELE_TO_NODELAY) && !map->PreloadGrid(loc.coord_x, loc.coord_y))
+            {
+                // If loading grid not finished, delay teleport 5 map update ticks
+                AddEvent(new TeleportDelayEvent(*this, WorldLocation(loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation, loc.mapid, map->GetInstanceId(), sWorld.getConfig(CONFIG_UINT32_REALMID)), options),
+                    5 * sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE));
+
+                DEBUG_LOG("Player::TeleportTo grid (map %u, instance %u, X%f Y%f) not fully loaded, far teleport %s delayed.", loc.mapid, map->GetInstanceId(), loc.coord_x, loc.coord_y, GetName());
+                return true;
+            }
+
             //setup delayed teleport flag
             //if teleport spell is casted in Unit::Update() func
             //then we need to delay it until update process will be finished
@@ -1865,7 +1903,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
             {
                 SetSemaphoreTeleportFar(true);
                 //lets save teleport destination for player
-                m_teleport_dest = WorldLocation(mapid, x, y, z, orientation);
+                m_teleport_dest = loc;
                 m_teleport_options = options;
                 return true;
             }
@@ -1882,7 +1920,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
                 // Note: at battleground join battleground id set before teleport
                 // and we already will found "current" battleground
                 // just need check that this is targeted map or leave
-                if (bg->GetMapId() != mapid)
+                if (bg->GetMapId() != loc.mapid)
                     LeaveBattleground(false);                   // don't teleport to entry point
             }
 
@@ -1905,7 +1943,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
             {
                 // send transfer packet to display load screen
                 WorldPacket data(SMSG_TRANSFER_PENDING, (4+4+4));
-                data << uint32(mapid);
+                data << uint32(loc.mapid);
                 if (m_transport)
                 {
                     data << uint32(m_transport->GetEntry());
@@ -1919,10 +1957,10 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
                 oldmap->Remove(this, false);
 
             // new final coordinates
-            float final_x = x;
-            float final_y = y;
-            float final_z = z;
-            float final_o = orientation;
+            float final_x = loc.coord_x;
+            float final_y = loc.coord_y;
+            float final_z = loc.coord_z;
+            float final_o = loc.orientation;
 
             if (m_movementInfo.HasMovementFlag(MOVEFLAG_ONTRANSPORT))
             {
@@ -1932,7 +1970,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
                 final_o += m_movementInfo.GetTransportPos()->o;
             }
 
-            m_teleport_dest = WorldLocation(mapid, final_x, final_y, final_z, final_o);
+            m_teleport_dest = WorldLocation(loc.mapid, final_x, final_y, final_z, final_o);
             SetFallInformation(0, final_z);
             // if the player is saved before worldport ack (at logout for example)
             // this will be used instead of the current location in SaveToDB
@@ -1945,7 +1983,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
             {
                 // transfer finished, inform client to start load
                 WorldPacket data(SMSG_NEW_WORLD, (20));
-                data << uint32(mapid);
+                data << uint32(loc.mapid);
                 if (m_transport)
                 {
                     data << float(m_movementInfo.GetTransportPos()->x);
@@ -2066,8 +2104,8 @@ void Player::RemoveFromWorld()
     ///- Do not add/remove the player from the object storage
     ///- It will crash when updating the ObjectAccessor
     ///- The player should only be removed when logging out
-    if (IsInWorld())
-        GetCamera().ResetView();
+    if (IsInWorld() && GetCamera())
+        GetCamera()->ResetView();
 
     Unit::RemoveFromWorld();
 }
@@ -2154,10 +2192,9 @@ void Player::Regenerate(Powers power, uint32 diff)
         case POWER_RAGE:                                    // Regenerate rage
         {
             float RageDecreaseRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_RAGE_LOSS);
-            addvalue += 20 * RageDecreaseRate;               // 2 rage by tick (= 2 seconds => 1 rage/sec)
-            break;
-        }
-        case POWER_ENERGY:                                  // Regenerate energy (rogue)
+            addvalue += 20 * RageDecreaseRate;              // 2 rage by tick (= 2 seconds => 1 rage/sec)
+        }   break;
+        case POWER_ENERGY:                                  // Regenerate energy
         {
             float EnergyRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_ENERGY);
             addvalue += 20 * EnergyRate;
@@ -2456,7 +2493,7 @@ void Player::SetGameMaster(bool on)
         getHostileRefManager().setOnlineOfflineState(true);
     }
 
-    m_camera.UpdateVisibilityForOwner();
+    GetCamera()->UpdateVisibilityForOwner();
     UpdateObjectVisibility();
     UpdateForQuestWorldObjects();
 }
@@ -4434,7 +4471,7 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
     sAccountMgr.ClearPlayerDataCache(playerguid);
 
     if (updateRealmChars)
-        sAccountMgr.UpdateCharactersCount(accountId, realmID);
+        sAccountMgr.UpdateCharactersCount(accountId, sWorld.getConfig(CONFIG_UINT32_REALMID));
 }
 
 /**
@@ -4593,7 +4630,7 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     UpdateZone(newzone,newarea);
 
     // update visibility of world around viewpoint
-    m_camera.UpdateVisibilityForOwner();
+    GetCamera()->UpdateVisibilityForOwner();
     // update visibility of player for nearby cameras
     UpdateObjectVisibility();
 
@@ -7207,11 +7244,11 @@ void Player::DuelComplete(DuelCompleteType type)
         return;
 
     WorldPacket data(SMSG_DUEL_COMPLETE, (1));
-    data << (uint8)((type != DUEL_INTERUPTED) ? 1 : 0);
+    data << (uint8)((type != DUEL_INTERRUPTED) ? 1 : 0);
     GetSession()->SendPacket(&data);
     duel->opponent->GetSession()->SendPacket(&data);
 
-    if (type != DUEL_INTERUPTED)
+    if (type != DUEL_INTERRUPTED)
     {
         data.Initialize(SMSG_DUEL_WINNER, (1+20));          // we guess size
         data << (uint8)((type==DUEL_WON) ? 0 : 1);          // 0 = just won; 1 = fled
@@ -19352,7 +19389,7 @@ void Player::HandleStealthedUnitsDetection()
     MaNGOS::UnitListSearcher<MaNGOS::AnyStealthedCheck > searcher(stealthedUnits, u_check);
     Cell::VisitAllObjects(this, searcher, MAX_PLAYER_STEALTH_DETECT_RANGE);
 
-    WorldObject const* viewPoint = GetCamera().GetBody();
+    WorldObject const* viewPoint = GetCamera()->GetBody();
 
     for (std::list<Unit*>::const_iterator i = stealthedUnits.begin(); i != stealthedUnits.end(); ++i)
     {
@@ -20797,20 +20834,9 @@ void Player::SendInitialPacketsAfterAddToMap()
         SetRoot(true);
 
     // manual send package (have code in ApplyModifier(true,true); that don't must be re-applied.
-    if (HasAuraType(SPELL_AURA_MOD_ROOT))
+    if (HasAuraType(SPELL_AURA_MOD_ROOT) || GetVehicle())
     {
-        WorldPacket data2(SMSG_FORCE_MOVE_ROOT, 10);
-        data2 << GetPackGUID();
-        data2 << (uint32)2;
-        SendMessageToSet(&data2,true);
-    }
-
-    if (GetVehicle())
-    {
-        WorldPacket data3(SMSG_FORCE_MOVE_ROOT, 10);
-        data3 << GetPackGUID();
-        data3 << uint32((m_movementInfo.GetVehicleSeatFlags() & SEAT_FLAG_CAN_CAST) ? 2 : 0);
-        SendMessageToSet(&data3,true);
+        SetRoot(true);
     }
 
     SendAurasForTarget(this);
@@ -24873,4 +24899,26 @@ void Player::RefundItem(Item* item)
     SaveInventoryAndGoldToDB();
 
     CharacterDatabase.CommitTransaction();
+}
+
+void Player::SetViewPoint(WorldObject* target, bool immediate, bool update_far_sight_field)
+{
+    if (target && target->IsInWorld() && GetCamera())
+    {
+        if (immediate && (HasExternalViewPoint() && GetCamera()->GetBody() != target))
+        {
+            WorldPacket data(SMSG_CLEAR_FAR_SIGHT_IMMEDIATE, 0);
+            GetSession()->SendPacket(&data);
+        }
+        GetCamera()->SetView(target, update_far_sight_field);
+    }
+    else
+    {
+        if (immediate &&  HasExternalViewPoint())
+        {
+            WorldPacket data(SMSG_CLEAR_FAR_SIGHT_IMMEDIATE, 0);
+            GetSession()->SendPacket(&data);
+        }
+        GetCamera()->ResetView(update_far_sight_field);
+    }
 }

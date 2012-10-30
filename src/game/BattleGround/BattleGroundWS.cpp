@@ -269,6 +269,8 @@ void BattleGroundWS::EventPlayerCapturedFlag(Player* source)
     source->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE,1,42);
     UpdateFlagState(source->GetTeam(), 1);                  // flag state none
     UpdateTeamScore(source->GetTeam());
+    source->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BG_OBJECTIVE_CAPTURE, 1, 42);
+
     // only flag capture should be updated
     UpdatePlayerScore(source, SCORE_FLAG_CAPTURES, 1);      // +1 flag captures
 

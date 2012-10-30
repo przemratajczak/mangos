@@ -631,6 +631,15 @@ inline Mechanics GetEffectMechanic(SpellEntry const* spellInfo, SpellEffectIndex
     return MECHANIC_NONE;
 }
 
+inline bool IsBinaryResistedSpell(SpellEntry const* spellInfo) 
+{
+    return (GetAllSpellMechanicMask(spellInfo) != 0
+            || IsDispelSpell(spellInfo)
+            || spellInfo->HasAttribute(SPELL_ATTR_EX4_IGNORE_RESISTANCES)
+            || spellInfo->HasAttribute(SPELL_ATTR_EX_BREAKABLE_BY_ANY_DAMAGE)
+            );
+};
+
 inline uint32 GetDispellMask(DispelType dispel)
 {
     // If dispell all
@@ -1106,6 +1115,10 @@ typedef std::map<uint32, PetLevelupSpellSet> PetLevelupSpellMap;
 
 struct PetDefaultSpellsEntry
 {
+    explicit PetDefaultSpellsEntry()
+    {
+        memset(spellid, 0, MAX_CREATURE_SPELL_DATA_SLOT * sizeof(uint32));
+    }
     uint32 spellid[MAX_CREATURE_SPELL_DATA_SLOT];
 };
 

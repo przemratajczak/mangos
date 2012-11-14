@@ -165,41 +165,16 @@ Creature::~Creature()
 
 void Creature::AddToWorld()
 {
-    ///- Register the creature for guid lookup
-    if (!IsInWorld() && GetObjectGuid().IsCreatureOrVehicle())
-    {
-        MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
-        GetMap()->GetObjectsStore().insert<Creature>(GetObjectGuid(), (Creature*)this);
-    }
+    Unit::AddToWorld();
 
-    if (IsInWorld() && GetObjectGuid().IsPet())
-    {
-        DEBUG_LOG("Creature::AddToWorld called, but creature (guid %u) is pet! Crush possible later.", GetObjectGuid().GetCounter());
-        ((Pet*)this)->AddToWorld();
-    }
-    else
-        Unit::AddToWorld();
-
+    // Not one time call this "added to world" creatures, spawned with negative spawn time (BG events mostly)
     if (GetVehicleKit())
         GetVehicleKit()->Reset();
 }
 
-void Creature::RemoveFromWorld()
+void Creature::RemoveFromWorld(bool remove)
 {
-    ///- Remove the creature from the accessor
-    if (IsInWorld() && GetObjectGuid().IsCreatureOrVehicle())
-    {
-        MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
-        GetMap()->GetObjectsStore().erase<Creature>(GetObjectGuid(), (Creature*)NULL);
-    }
-
-    if (IsInWorld() && GetObjectGuid().IsPet())
-    {
-        DEBUG_LOG("Creature::RemoveFromWorld called, but creature (guid %u) is pet! Crush possible later.", GetObjectGuid().GetCounter());
-        ((Pet*)this)->RemoveFromWorld();
-    }
-    else
-        Unit::RemoveFromWorld();
+    Unit::RemoveFromWorld(remove);
 }
 
 void Creature::RemoveCorpse()
@@ -704,13 +679,12 @@ void Creature::RegenerateHealth()
     if (!IsRegeneratingHealth())
         return;
 
-    uint32 curValue = GetHealth();
-    uint32 maxValue = GetMaxHealth();
+    uint32 maxvalue = GetMaxHealth();
 
-    if (curValue >= maxValue)
+    if (GetHealth() >= maxvalue)
         return;
 
-    uint32 addvalue = 0;
+    float addvalue = 0.0f;
 
     // Not only pet, but any controlled creature
     if (GetCharmerOrOwnerGuid())
@@ -719,14 +693,28 @@ void Creature::RegenerateHealth()
         float Spirit = GetStat(STAT_SPIRIT);
 
         if (GetPower(POWER_MANA) > 0)
-            addvalue = uint32(Spirit * 0.25 * HealthIncreaseRate);
+            addvalue = Spirit * 0.25 * HealthIncreaseRate;
         else
-            addvalue = uint32(Spirit * 0.80 * HealthIncreaseRate);
+            addvalue = Spirit * 0.80 * HealthIncreaseRate;
     }
     else
-        addvalue = maxValue / 3;
+        addvalue = maxvalue / 3.0f;
 
-    ModifyHealth(addvalue);
+    // Currenly creatures regenerate health only out of combat, but i'm think, that it's wrong /dev/rsa
+    if (!isInCombat())
+    {
+        AuraList const& mModHealthRegenPct = GetAurasByType(SPELL_AURA_MOD_HEALTH_REGEN_PERCENT);
+        if (!mModHealthRegenPct.empty())
+        {
+            for(AuraList::const_iterator i = mModHealthRegenPct.begin(); i != mModHealthRegenPct.end(); ++i)
+                addvalue *= (100.0f + (*i)->GetModifier()->m_amount) / 100.0f;
+        }
+    }
+    else if (HasAuraType(SPELL_AURA_MOD_REGEN_DURING_COMBAT))
+        addvalue *= GetTotalAuraModifier(SPELL_AURA_MOD_REGEN_DURING_COMBAT) / 100.0f;
+
+    if (addvalue > M_NULL_F)
+        ModifyHealth((uint32)addvalue);
 }
 
 void Creature::DoFleeToGetAssistance()

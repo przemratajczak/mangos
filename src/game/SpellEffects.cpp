@@ -11931,6 +11931,12 @@ void Spell::EffectCharge(SpellEffectIndex /*eff_idx*/)
 
     float speed = m_spellInfo->speed ? m_spellInfo->speed : BASE_CHARGE_SPEED;
 
+    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "Spell::EffectCharge spell %u caster %s target %s speed %f dest. point %f %f %f",
+             m_spellInfo->Id, 
+             m_caster ? m_caster->GetObjectGuid().GetString().c_str() : "<none>", 
+             unitTarget ? unitTarget->GetObjectGuid().GetString().c_str() : "<none>", 
+             speed, z, y, z);
+
     if (m_caster->IsFalling())
         m_caster->MonsterMoveWithSpeed(x, y, z, speed, false, false);
     else
@@ -12742,7 +12748,7 @@ void Spell::EffectBind(SpellEffectIndex eff_idx)
     }
     else
     {
-        player->GetPosition(loc);
+        loc = player->GetPosition();
         area_id = player->GetAreaId();
     }
 

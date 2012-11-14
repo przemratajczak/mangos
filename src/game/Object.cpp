@@ -122,13 +122,13 @@ Object::~Object( )
     if (IsInWorld())
     {
         ///- Do NOT call RemoveFromWorld here, if the object is a player it will crash
-        sLog.outError("Object::~Object (GUID: %u TypeId: %u) deleted but still in world!!", GetGUIDLow(), GetTypeId());
+        sLog.outError("Object::~Object (%s type %u) deleted but still in world!!", GetObjectGuid() ? GetObjectGuid().GetString().c_str() : "<none>", GetTypeId());
         MANGOS_ASSERT(false);
     }
 
     if (m_objectUpdated)
     {
-        sLog.outError("Object::~Object (GUID: %u TypeId: %u) deleted but still have updated status!!", GetGUIDLow(), GetTypeId());
+        sLog.outError("Object::~Object ((%s type %u) deleted but still have updated status!!", GetObjectGuid() ? GetObjectGuid().GetString().c_str() : "<none>", GetTypeId());
         MANGOS_ASSERT(false);
     }
 
@@ -180,8 +180,15 @@ void Object::SendForcedObjectUpdate()
     WorldPacket packet;                                     // here we allocate a std::vector with a size of 0x10000
     for(UpdateDataMapType::iterator iter = update_players.begin(); iter != update_players.end(); ++iter)
     {
+        if (!iter->first || !iter->first.IsPlayer())
+            continue;
+
+        Player* pPlayer = ObjectAccessor::FindPlayer(iter->first);
+        if (!pPlayer)
+            continue;
+
         iter->second.BuildPacket(&packet);
-        iter->first->GetSession()->SendPacket(&packet);
+        pPlayer->GetSession()->SendPacket(&packet);
         packet.clear();                                     // clean the string
     }
 }
@@ -1033,18 +1040,14 @@ bool Object::PrintEntryError(char const* descr) const
 }
 
 
-void Object::BuildUpdateDataForPlayer(Player* pl, UpdateDataMapType& update_players)
+void Object::BuildUpdateDataForPlayer(Player* player, UpdateDataMapType& update_players)
 {
-    UpdateDataMapType::iterator iter = update_players.find(pl);
+    if (!player)
+        return;
 
-    if (iter == update_players.end())
-    {
-        std::pair<UpdateDataMapType::iterator, bool> p = update_players.insert( UpdateDataMapType::value_type(pl, UpdateData()) );
-        MANGOS_ASSERT(p.second);
-        iter = p.first;
-    }
+    UpdateData& data = update_players[player->GetObjectGuid()];
 
-    BuildValuesUpdateBlockForPlayer(&iter->second, iter->first);
+    BuildValuesUpdateBlockForPlayer(&data, player);
 }
 
 void Object::AddToClientUpdateList()
@@ -1079,20 +1082,44 @@ void Object::MarkForClientUpdate()
 
 WorldObject::WorldObject()
     : m_groupLootTimer(0), m_groupLootId(0), m_lootGroupRecipientId(0), m_transportInfo(NULL),
-    m_currMap(NULL), m_mapId(0), m_InstanceId(0), m_phaseMask(PHASEMASK_NORMAL), m_viewPoint(*this), m_isActiveObject(false),
+    m_currMap(NULL), m_position(WorldLocation()), m_phaseMask(PHASEMASK_NORMAL), m_viewPoint(*this), m_isActiveObject(false),
     m_LastUpdateTime(WorldTimer::getMSTime())
 {
 }
 
 void WorldObject::CleanupsBeforeDelete()
 {
-    RemoveFromWorld();
+    RemoveFromWorld(false);
+    ClearUpdateMask(true);
 }
 
 void WorldObject::_Create(ObjectGuid guid, uint32 phaseMask)
 {
     Object::_Create(guid);
     m_phaseMask = phaseMask;
+}
+
+void WorldObject::AddToWorld()
+{
+    MANGOS_ASSERT(m_currMap);
+    if (!IsInWorld())
+        Object::AddToWorld();
+
+    // Possible inserted object, already exists in object store. Not must cause any problem, but need check.
+    GetMap()->InsertObject(this);
+    GetMap()->AddUpdateObject(GetObjectGuid());
+}
+
+void WorldObject::RemoveFromWorld(bool remove)
+{
+    MANGOS_ASSERT(m_currMap);
+
+    if (IsInWorld())
+        Object::RemoveFromWorld(remove);
+
+    GetMap()->RemoveUpdateObject(GetObjectGuid());
+    if (remove)
+        GetMap()->EraseObject(GetObjectGuid());
 }
 
 ObjectLockType& WorldObject::GetLock(MapLockType _lockType)
@@ -1102,31 +1129,33 @@ ObjectLockType& WorldObject::GetLock(MapLockType _lockType)
 
 void WorldObject::Relocate(float x, float y, float z, float orientation)
 {
-    m_position.x = x;
-    m_position.y = y;
-    m_position.z = z;
-    m_position.o = orientation;
-
-    if (isType(TYPEMASK_UNIT))
-        ((Unit*)this)->m_movementInfo.ChangePosition(x, y, z, orientation);
+    Relocate(WorldLocation(GetMapId(), x, y, z, orientation));
 }
 
 void WorldObject::Relocate(float x, float y, float z)
 {
-    m_position.x = x;
-    m_position.y = y;
-    m_position.z = z;
-
-    if (isType(TYPEMASK_UNIT))
-        ((Unit*)this)->m_movementInfo.ChangePosition(x, y, z, GetOrientation());
+    Relocate(x, y, z, GetOrientation());
 }
 
 void WorldObject::SetOrientation(float orientation)
 {
-    m_position.o = orientation;
+    Relocate(WorldLocation(GetMapId(), GetPositionX(), GetPositionY(), GetPositionZ(), orientation));
+}
+
+void WorldObject::Relocate(WorldLocation const& location)
+{
+    bool locationChanged    = !bool(location == m_position);
+    bool orientationChanged = bool(fabs(location.o - m_position.o) > M_NULL_F);
+
+    m_position = location;
 
     if (isType(TYPEMASK_UNIT))
-        ((Unit*)this)->m_movementInfo.ChangeOrientation(orientation);
+    {
+        if (locationChanged)
+            ((Unit*)this)->m_movementInfo.ChangePosition(m_position.x, m_position.y, m_position.z, m_position.o);
+        else if (orientationChanged)
+            ((Unit*)this)->m_movementInfo.ChangeOrientation(m_position.o);
+    }
 }
 
 uint32 WorldObject::GetZoneId() const
@@ -1704,13 +1733,13 @@ void WorldObject::SendGameObjectCustomAnim(ObjectGuid guid, uint32 animId /*= 0*
     SendMessageToSet(&data, true);
 }
 
-void WorldObject::SetMap(Map * map)
+void WorldObject::SetMap(Map* map)
 {
     MANGOS_ASSERT(map);
     m_currMap = map;
     //lets save current map's Id/instanceId
-    m_mapId = map->GetId();
-    m_InstanceId = map->GetInstanceId();
+    m_position.mapid    = map->GetId();
+    m_position.instance = map->GetInstanceId();
 }
 
 TerrainInfo const* WorldObject::GetTerrain() const
@@ -2084,12 +2113,12 @@ void WorldObject::UpdateObjectVisibility()
 
 void WorldObject::AddToClientUpdateList()
 {
-    GetMap()->AddUpdateObject(this);
+    GetMap()->AddUpdateObject(GetObjectGuid());
 }
 
 void WorldObject::RemoveFromClientUpdateList()
 {
-    GetMap()->RemoveUpdateObject(this);
+    GetMap()->RemoveUpdateObject(GetObjectGuid());
 }
 
 struct WorldObjectChangeAccumulator
@@ -2109,7 +2138,7 @@ struct WorldObjectChangeAccumulator
         for(CameraMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
         {
             Player* owner = iter->getSource()->GetOwner();
-            if (owner != &i_object && owner->HaveAtClient(&i_object))
+            if (owner && owner != &i_object && owner->HaveAtClient(&i_object))
                 i_object.BuildUpdateDataForPlayer(owner, i_updateDatas);
         }
     }

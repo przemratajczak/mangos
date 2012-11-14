@@ -154,6 +154,8 @@ typedef UNORDERED_MAP<uint32/*(mapid,spawnMode) pair*/,CellObjectGuidsMap> MapOb
 #define MIN_CREATURE_AI_TEXT_STRING_ID (-1)                 // 'creature_ai_texts'
 #define MAX_CREATURE_AI_TEXT_STRING_ID (-1000000)
 
+static_assert(MAX_DB_SCRIPT_STRING_ID < ACE_INT32_MAX, "Must scope with int32 range");
+
 struct MangosStringLocale
 {
     std::vector<std::string> Content;                       // 0 -> default, i -> i-1 locale index
@@ -835,6 +837,8 @@ class ObjectMgr
         void LoadTrainers() { LoadTrainers("npc_trainer", false); }
 
         void LoadVehicleAccessory();
+
+        void LoadTransports(Map* map);
 
         std::string GeneratePetName(uint32 entry);
         uint32 GetBaseXP(uint32 level) const;

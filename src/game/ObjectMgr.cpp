@@ -764,6 +764,23 @@ void ObjectMgr::ConvertCreatureAddonAuras(CreatureDataAddon* addon, char const* 
             continue;
         }
 
+        if (!IsSpellAppliesAura(AdditionalSpellInfo))
+        {
+            sLog.outDetail("Creature (%s: %u) has spell %u defined in `auras` field in `%s, but spell doesn't apply an aura`.", guidEntryStr, addon->guidOrEntry, cAura, table);
+        }
+
+        // TODO: Remove LogFilter check after more research
+        if (!sLog.HasLogFilter(LOG_FILTER_DB_STRICTED_CHECK) && !IsOnlySelfTargeting(AdditionalSpellInfo))
+        {
+            sLog.outDetail("Creature (%s: %u) has spell %u defined in `auras` field in `%s, but spell is no self-only spell`.", guidEntryStr, addon->guidOrEntry, cAura, table);
+        }
+
+        if (IsSpellHaveAura(AdditionalSpellInfo, SPELL_AURA_CONTROL_VEHICLE))
+        {
+            sLog.outErrorDb("Creature (%s: %u) has spell %u defined in `auras` field in `%s, but vehicle control spells are not suitable for _addon.auras handling`.", guidEntryStr, addon->guidOrEntry, cAura, table);
+            continue;
+        }
+
         if (std::find(&addon->auras[0], &addon->auras[i], cAura) != &addon->auras[i])
         {
             sLog.outErrorDb("Creature (%s: %u) has duplicate spell %u defined in `auras` field in `%s`.", guidEntryStr, addon->guidOrEntry, cAura, table);
@@ -9734,4 +9751,69 @@ GameObjectDataPair const* FindGOData::GetResult() const
         return i_spawnedData;
 
     return i_anyData;
+}
+
+void ObjectMgr::LoadTransports(Map* map)
+{
+    if (!map)
+        return;
+
+    QueryResult* result = WorldDatabase.PQuery("SELECT entry, name, period FROM transports");
+
+    if (!result)
+        return;
+
+    uint32 count = 0;
+    do
+    {
+        Field *fields = result->Fetch();
+        uint32 entry        = fields[0].GetUInt32();
+        std::string name    = fields[1].GetCppString();
+        uint32 period       = fields[2].GetUInt32();
+
+        if (Transport::GetPossibleMapByEntry(entry, true) != map->GetId() || !Transport::IsSpawnedAtDifficulty(entry, map->GetDifficulty()))
+            continue;
+
+        ++count;
+/*
+        if (Transport* transport = Transport::Load(this, entry, name, period))
+        {
+            if (transport->GetGoState() == GO_STATE_READY)
+                transport->Start();
+            Add<GameObject>(transport);
+            DEBUG_LOG("Map::LoadTransports Loading %s %s, %s, transport map id %u",
+                transport->GetObjectGuid().GetString().c_str(),
+                transport->GetGOInfo()->name,
+                name.c_str(),
+                transport->GetGOInfo()->moTransport.mapID);
+                DEBUG_LOG("Map::LoadTransports guid %u coords %f %f %f",
+                transport->GetObjectGuid().GetRawValue(),
+                transport->GetPositionX(),
+                transport->GetPositionY(),
+                transport->GetPositionZ());
+        }
+*/
+    } while(result->NextRow());
+
+    delete result;
+
+    if (count > 0)
+       DETAIL_LOG( "Map::LoadTransports Loaded %u transports for map %u instance %u", count, map->GetId(), map->GetInstanceId() );
+
+    // check transport data DB integrity
+    result = WorldDatabase.PQuery("SELECT gameobject.guid,gameobject.id,transports.name FROM gameobject,transports WHERE gameobject.id = transports.entry AND gameobject.map = %u",map->GetId());
+    if(result)                                              // wrong data found
+    {
+        do
+        {
+            Field *fields = result->Fetch();
+
+            uint32 guid  = fields[0].GetUInt32();
+            uint32 entry = fields[1].GetUInt32();
+            std::string name = fields[2].GetCppString();
+            sLog.outErrorDb("Map::LoadTransportsTransport %u '%s' have record (GUID: %u) in `gameobject`. Transports DON'T must have any records in `gameobject` or its behavior will be unpredictable/bugged.",entry,name.c_str(),guid);
+        }
+        while(result->NextRow());
+        delete result;
+    }
 }

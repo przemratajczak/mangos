@@ -83,22 +83,16 @@ GameObject::~GameObject()
 
 void GameObject::AddToWorld()
 {
-    ///- Register the gameobject for guid lookup
-    if(!IsInWorld())
-    {
-        MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
-        GetMap()->GetObjectsStore().insert<GameObject>(GetObjectGuid(), (GameObject*)this);
-    }
+    WorldObject::AddToWorld();
 
     if (m_model)
         GetMap()->InsertGameObjectModel(*m_model);
 
     EnableCollision(CalculateCurrentCollisionState());
 
-    Object::AddToWorld();
 }
 
-void GameObject::RemoveFromWorld()
+void GameObject::RemoveFromWorld(bool remove)
 {
     // store the slider value for non instance, non locked capture points
     if (!GetMap()->IsBattleGroundOrArena())
@@ -121,11 +115,6 @@ void GameObject::RemoveFromWorld()
                               GetGuidStr().c_str(), m_spellId, GetGOInfo()->GetLinkedGameObjectEntry(), owner_guid.GetString().c_str());
             }
         }
-
-        MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
-
-        GetMap()->GetObjectsStore().erase<GameObject>(GetObjectGuid(), (GameObject*)NULL);
-
         EnableCollision(false);
     }
 
@@ -133,7 +122,7 @@ void GameObject::RemoveFromWorld()
         if (GetMap()->ContainsGameObjectModel(*m_model))
             GetMap()->RemoveGameObjectModel(*m_model);
 
-    Object::RemoveFromWorld();
+    WorldObject::RemoveFromWorld(remove);
 }
 
 bool GameObject::Create(uint32 guidlow, uint32 name_id, Map* map, uint32 phaseMask, float x, float y, float z, float ang, QuaternionData rotation, uint8 animprogress, GOState go_state)
@@ -244,7 +233,8 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
 {
     if (GetObjectGuid().IsMOTransport())
     {
-        //((Transport*)this)->Update(p_time);
+        //GetTransportKit()->Update(update_diff, diff);
+        //DEBUG_LOG("Transport::Update %s", GetObjectGuid().GetString().c_str());
         return;
     }
 
@@ -1388,6 +1378,21 @@ void GameObject::Use(Unit* user)
 
             return;
         }
+        case GAMEOBJECT_TYPE_MO_TRANSPORT:                   // 15
+        {
+            if (GetGoState() == GO_STATE_READY)
+            {
+                SetGoState(GO_STATE_ACTIVE);
+                SetActiveObjectState(false);
+            }
+            else
+            {
+                SetGoState(GO_STATE_READY);
+                SetActiveObjectState(true);
+            }
+
+            return;
+        }
         case GAMEOBJECT_TYPE_FISHINGNODE:                   // 17 fishing bobber
         {
             if (user->GetTypeId() != TYPEID_PLAYER)
@@ -2472,11 +2477,6 @@ float GameObject::GetDeterminativeSize(bool b_priorityZ) const
     float dz = info->maxZ - info->minZ;
 
     return b_priorityZ ? dz : sqrt(dx*dx + dy*dy +dz*dz);
-}
-
-void GameObject::SetActiveObjectState(bool active)
-{
-    WorldObject::SetActiveObjectState(active);
 }
 
 void GameObject::SetCapturePointSlider(int8 value)

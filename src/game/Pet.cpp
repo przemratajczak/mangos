@@ -2688,7 +2688,7 @@ bool Pet::Summon()
     else
         GetCharmInfo()->SetState(CHARM_STATE_REACT,REACT_DEFENSIVE);
 
-    if (!owner->GetTypeId() == TYPEID_PLAYER || !IsPermanentPetFor((Player*)owner))
+    if (owner->GetTypeId() != TYPEID_PLAYER || !IsPermanentPetFor((Player*)owner))
     {
         GetCharmInfo()->InitCharmCreateSpells();
         LoadCreatureAddon(true);
@@ -2761,6 +2761,7 @@ bool Pet::Summon()
             owner->SetMiniPet(this);
             AIM_Initialize();
             return true;
+            break;
         }
         default:
         {

@@ -22,7 +22,7 @@
 
 #include "Common.h"
 
-struct Position
+struct MANGOS_DLL_SPEC Position
 {
     Position() : x(0.0f), y(0.0f), z(0.0f), o(0.0f) {}
     Position(float _x, float _y, float _z, float _o) : x(_x), y(_y), z(_z), o(_o) {}
@@ -50,17 +50,17 @@ struct Position
 
     virtual bool HasMap() const { return false; };
 
-    bool operator == (Position const& pos) const
+    bool operator == (Position const &pos) const
     {
-        return ((fabs(x - pos.x) < M_NULL_F)
-            && (fabs(y - pos.y) < M_NULL_F)
-            && (fabs(z - pos.z) < M_NULL_F));
+        return ((x - pos.x < M_NULL_F)
+            && (y - pos.y < M_NULL_F)
+            && (z - pos.z < M_NULL_F));
     }
 };
 
 class WorldObject;
 
-struct WorldLocation : public Position
+struct MANGOS_DLL_SPEC WorldLocation : public Position
 {
     // mapid = -1 for not initialized WorldLocation
     int32     mapid;
@@ -89,24 +89,22 @@ struct WorldLocation : public Position
         : Position(loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation), mapid(loc.mapid), instance(loc.instance), realmid(loc.realmid)
     {}
 
-    WorldLocation(WorldObject const& object);
-
     ~WorldLocation() {};
 
-    bool operator == (WorldLocation const& loc) const
+    bool operator == (WorldLocation const &loc) const
     {
         return (realmid    == loc.realmid
             && mapid       == loc.mapid
             && instance    == loc.instance
-            && ((Position*)this) == ((Position*)&loc));
+            && (coord_x - loc.coord_x < M_NULL_F)
+            && (coord_y - loc.coord_y < M_NULL_F)
+            && (coord_z - loc.coord_z < M_NULL_F));
     }
 
     bool HasMap() const override
     {
         return mapid >= 0;
     }
-
     Position const& GetPosition() { return *this; };
-
 };
 #endif

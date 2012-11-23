@@ -1269,7 +1269,6 @@ class MANGOS_DLL_SPEC Player : public Unit
         {
             return StoreItem(dest, pItem, update);
         }
-        Item* BankItem(uint16 pos, Item *pItem, bool update);
         void RemoveItem(uint8 bag, uint8 slot, bool update);
         void MoveItemFromInventory(uint8 bag, uint8 slot, bool update);
                                                             // in trade, auction, guild bank, mail....
@@ -2309,7 +2308,7 @@ class MANGOS_DLL_SPEC Player : public Unit
         void UpdateVisibilityOf(WorldObject const* viewPoint, WorldObject* target);
 
         template<class T>
-            void UpdateVisibilityOf(WorldObject const* viewPoint,T* target, UpdateData& data, std::set<WorldObject*>& visibleNow);
+            void UpdateVisibilityOf(WorldObject const* viewPoint,T* target, UpdateData& data, WorldObjectSet& visibleNow);
 
         // Stealth detection system
         void HandleStealthedUnitsDetection();
@@ -2463,10 +2462,10 @@ class MANGOS_DLL_SPEC Player : public Unit
         float GetCollisionHeight(bool mounted);
 
         // Parent objects (items currently) update system
-        Object* GetDependentObject(ObjectGuid const& guid) override;
+        virtual Object* GetDependentObject(ObjectGuid const& guid) override;
         virtual GuidSet const* GetObjectsUpdateQueue() override { return &i_objectsToClientUpdate; };
-        void AddUpdateObject(ObjectGuid const& guid) override;
-        void RemoveUpdateObject(ObjectGuid const& guid) override;
+        virtual void AddUpdateObject(ObjectGuid const& guid) override;
+        virtual void RemoveUpdateObject(ObjectGuid const& guid) override;
 
     protected:
 

@@ -164,16 +164,16 @@ void Camera::UpdateVisibilityOf(WorldObject* target)
 }
 
 template<class T>
-void Camera::UpdateVisibilityOf(T* target, UpdateData& data, std::set<WorldObject*>& vis)
+void Camera::UpdateVisibilityOf(T* target, UpdateData& data, WorldObjectSet& vis)
 {
     m_owner.template UpdateVisibilityOf<T>(GetBody(), target, data, vis);
 }
 
-template void Camera::UpdateVisibilityOf(Player*        , UpdateData& , std::set<WorldObject*>&);
-template void Camera::UpdateVisibilityOf(Creature*      , UpdateData& , std::set<WorldObject*>&);
-template void Camera::UpdateVisibilityOf(Corpse*        , UpdateData& , std::set<WorldObject*>&);
-template void Camera::UpdateVisibilityOf(GameObject*    , UpdateData& , std::set<WorldObject*>&);
-template void Camera::UpdateVisibilityOf(DynamicObject* , UpdateData& , std::set<WorldObject*>&);
+template void Camera::UpdateVisibilityOf(Player*        , UpdateData& , WorldObjectSet&);
+template void Camera::UpdateVisibilityOf(Creature*      , UpdateData& , WorldObjectSet&);
+template void Camera::UpdateVisibilityOf(Corpse*        , UpdateData& , WorldObjectSet&);
+template void Camera::UpdateVisibilityOf(GameObject*    , UpdateData& , WorldObjectSet&);
+template void Camera::UpdateVisibilityOf(DynamicObject* , UpdateData& , WorldObjectSet&);
 
 void Camera::UpdateVisibilityForOwner()
 {
@@ -226,15 +226,17 @@ void ViewPoint::CameraCall(void (Camera::*handler)())
     if (!m_cameras.empty())
     {
 
-        for (CameraList::iterator itr = m_cameras.begin(); itr != m_cameras.end();)
+        for (CameraList::iterator itr = m_cameras.begin(), next; itr != m_cameras.end(); itr = next)
         {
+            next = itr;
+            ++next;
             ObjectGuid guid = *itr;
+
             if (m_body.GetTypeId() == TYPEID_PLAYER && guid == m_body.GetObjectGuid())
             {
                 if (Camera* camera = ((Player*)&m_body)->GetCamera())
                     if (camera->IsInitialized())
                         (camera->*handler)();
-                ++itr;
             }
             else if (m_body.GetMap() && guid.IsPlayer())
             {
@@ -243,7 +245,6 @@ void ViewPoint::CameraCall(void (Camera::*handler)())
                     if (Camera* camera = player->GetCamera())
                         if (camera->IsInitialized())
                             (camera->*handler)();
-                    ++itr;
                 }
                 else
                     m_cameras.erase(guid);

@@ -1083,7 +1083,7 @@ inline void Map::setNGrid(NGridType *grid, uint32 x, uint32 y)
 
 void Map::AddObjectToRemoveList(WorldObject* obj, bool immediateCleanup)
 {
-    MANGOS_ASSERT(obj && obj->GetMapId() == GetId() && obj->GetInstanceId() == GetInstanceId());
+    MANGOS_ASSERT(obj && obj->GetMap() == this);
 
     obj->CleanupsBeforeDelete();                                // remove or simplify at least cross referenced links
 
@@ -2260,17 +2260,10 @@ void Map::RemoveAllAttackersFor(ObjectGuid targetGuid)
     }
 }
 
-GuidSet Map::GetAttackersFor(ObjectGuid targetGuid)
+GuidSet& Map::GetAttackersFor(ObjectGuid targetGuid)
 {
-    if (!targetGuid.IsEmpty())
-    {
-        ReadGuard Guard(GetLock());
-        AttackersMap::const_iterator itr = m_attackersMap.find(targetGuid);
-        if (itr != m_attackersMap.end())
-            return itr->second;
-    }
-
-    return GuidSet();
+    ReadGuard Guard(GetLock());
+    return m_attackersMap[targetGuid];
 }
 
 void Map::CreateAttackersStorageFor(ObjectGuid targetGuid)
@@ -2315,7 +2308,8 @@ void Map::ForcedUnload()
 
         if (player->IsBeingTeleportedFar())
         {
-            WorldLocation old_loc = player->GetPosition();
+            WorldLocation old_loc;
+            player->GetPosition(old_loc);
             if (!player->TeleportTo(old_loc, TELE_TO_NODELAY))
             {
                 DETAIL_LOG("Map::ForcedUnload: %s is in teleport state, cannot be ported to his previous place, teleporting him to his homebind place...",
@@ -2414,9 +2408,13 @@ bool Map::GetHitPosition(float srcX, float srcY, float srcZ, float& destX, float
     return result0 || result1;
 }
 
-float Map::GetHeight(uint32 phasemask, float x, float y, float z, bool pCheckVMap/*=true*/, float maxSearchDist/*=DEFAULT_HEIGHT_SEARCH*/) const
+float Map::GetHeight(uint32 phasemask, float x, float y, float z) const
 {
-    return std::max<float>(m_TerrainData->GetHeightStatic(x,y,z,pCheckVMap,maxSearchDist), m_dyn_tree.getHeight(x, y,z,maxSearchDist, phasemask));
+    float staticHeight = m_TerrainData->GetHeightStatic(x, y, z);
+
+    // Get Dynamic Height around static Height (if valid)
+    float dynSearchHeight = 2.0f + (z < staticHeight ? staticHeight : z);
+    return std::max<float>(staticHeight, m_dyn_tree.getHeight(x, y, dynSearchHeight, dynSearchHeight - staticHeight, phasemask));
 }
 
 void Map::InsertGameObjectModel(const GameObjectModel& mdl)

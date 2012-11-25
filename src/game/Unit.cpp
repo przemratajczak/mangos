@@ -11861,7 +11861,7 @@ void Unit::DoPetCastSpell(Unit* target, uint32 spellId)
 
 }
 
-void Unit::DoPetCastSpell(Player *owner, uint8 cast_count, SpellCastTargets* targets, SpellEntry const* spellInfo )
+void Unit::DoPetCastSpell(Player* owner, uint8 cast_count, SpellCastTargets* targets, SpellEntry const* spellInfo )
 {
     if (!IsInWorld())
         return;
@@ -12002,10 +12002,8 @@ void Unit::DoPetCastSpell(Player *owner, uint8 cast_count, SpellCastTargets* tar
     }
     else if (pet)
     {
-        if (owner && HasAuraType(SPELL_AURA_MOD_POSSESS))
-            Spell::SendCastResult(owner,spellInfo,0,result);
-        else
-            SendPetCastFail(spellInfo->Id, result);
+        if (owner)
+            Spell::SendCastResult(owner,spellInfo,0,result, true);
 
         if (owner && !((Creature*)this)->HasSpellCooldown(spellInfo->Id) && !triggered)
             owner->SendClearCooldown(spellInfo->Id, pet);
@@ -12304,34 +12302,7 @@ Player* Unit::GetSpellModOwner() const
 }
 
 ///----------Pet responses methods-----------------
-void Unit::SendPetCastFail(uint32 spellid, SpellCastResult msg)
-{
-    if (msg == SPELL_CAST_OK)
-        return;
-
-    Unit *owner = GetCharmerOrOwner();
-    if(!owner || owner->GetTypeId() != TYPEID_PLAYER)
-        return;
-
-    WorldPacket data(SMSG_PET_CAST_FAILED, 1 + 4 + 1);
-    data << uint8(0);                                       // cast count?
-    data << uint32(spellid);
-    data << uint8(msg);
-
-    // More cases exist, see Spell::SendCastResult (can possibly be unified)
-    switch(msg)
-    {
-        case SPELL_FAILED_NOT_READY:
-            data << uint32(0);                              // unknown
-            break;
-        default:
-            break;
-    }
-
-    ((Player*)owner)->GetSession()->SendPacket(&data);
-}
-
-void Unit::SendPetActionFeedback (uint8 msg)
+void Unit::SendPetActionFeedback(uint8 msg)
 {
     Unit* owner = GetOwner();
     if(!owner || owner->GetTypeId() != TYPEID_PLAYER)

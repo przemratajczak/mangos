@@ -254,7 +254,7 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
                 {
                     // Arming Time for GAMEOBJECT_TYPE_TRAP (6)
                     Unit* owner = GetOwner();
-                    if (owner && owner->isInCombat()
+                    if ((owner && owner->isInCombat())
                                                      // FIXME - need remove this hacks on some objects
                         || GetEntry() == 190752      // SoTA Seaforium Charges
                         || GetEntry() == 195331      // IoC Huge Seaforium Charges
@@ -284,6 +284,8 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
                     }
                     break;
                 }
+                default:
+                    break;
             }
             break;
         }
@@ -385,12 +387,11 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
                     }
                     else                                    // Environmental traps
                     {
-                        Player* p_ok = NULL;
-                        // Wrong search. need check all units, unfrendly to this GO (requires implement some methods)
-                        MaNGOS::AnyPlayerInObjectRangeCheck p_check(this, radius);
-                        MaNGOS::PlayerSearcher<MaNGOS::AnyPlayerInObjectRangeCheck> checker(p_ok, p_check);
-                        Cell::VisitWorldObjects(this, checker, radius);
-                        ok = p_ok;
+                        Unit* u_ok = NULL;
+                        MaNGOS::NearestAttackableUnitInObjectRangeCheck u_check(this, radius);
+                        MaNGOS::UnitLastSearcher<MaNGOS::NearestAttackableUnitInObjectRangeCheck> checker(u_ok, u_check);
+                        Cell::VisitAllObjects(this, checker, radius);
+                        ok = u_ok;
                     }
 
                     if (ok)
@@ -2249,7 +2250,7 @@ bool GameObject::CalculateCurrentCollisionState() const
         return false;
 
     bool startOpen;
-    bool result;
+    bool result = false;
 
     switch (GetGoType())
     {

@@ -1213,7 +1213,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo *target)
     }
 
     // Speed possible inherited from triggering spell
-    float speed_proto = GetBaseSpellSpeed();
+    // float speed_proto = GetBaseSpellSpeed();
 
     if (m_spellInfo->speed > M_NULL_F || GetDelayStart())
     {
@@ -1438,7 +1438,7 @@ void Spell::DoSpellHitOnUnit(Unit *unit, uint32 effectMask)
     Unit* realCaster = GetAffectiveCaster();
 
     // Speed possible inherited from triggering spell
-    float speed_proto = GetBaseSpellSpeed();
+    // float speed_proto = GetBaseSpellSpeed();
 
     // Recheck effect immune (only for delayed spells)
     if (m_spellInfo->speed > M_NULL_F)

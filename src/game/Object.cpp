@@ -1276,6 +1276,12 @@ bool WorldObject::IsWithinLOSInMap(const WorldObject* obj) const
 
 bool WorldObject::IsWithinLOS(float ox, float oy, float oz) const
 {
+    if(GetMapId() == 616) // Eye of Eternity hack
+        return true;
+
+    if(GetAreaId() == 4889) //frost queen's lair
+        return true;
+
     float x,y,z;
     GetPosition(x,y,z);
     return GetMap()->IsInLineOfSight(x, y, z + 2.0f, ox, oy, oz + 2.0f, GetPhaseMask());

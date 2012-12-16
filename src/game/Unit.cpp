@@ -520,9 +520,9 @@ bool Unit::SetPosition(float x, float y, float z, float orientation, bool telepo
         RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_MOVE);
 
         if (GetTypeId() == TYPEID_PLAYER)
-            GetMap()->PlayerRelocation((Player*)this, x, y, z, orientation);
+            GetMap()->Relocation((Player*)this, x, y, z, orientation);
         else
-            GetMap()->CreatureRelocation((Creature*)this, x, y, z, orientation);
+            GetMap()->Relocation((Creature*)this, x, y, z, orientation);
     }
     else if (turn)
         SetOrientation(orientation);
@@ -768,9 +768,6 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
         DEBUG_FILTER_LOG(LOG_FILTER_DAMAGE, "Unit::DealDamage %s strike critter, critter %s dies", GetObjectGuid().GetString().c_str(), pVictim->GetObjectGuid().GetString().c_str());
 
         ((Creature*)pVictim)->SetLootRecipient(this);
-
-        pVictim->m_deathState = DEAD;                       // so that isAlive, isDead return expected results in the called hooks of JustKilledCreature
-                                                            // must be used only shortly before SetDeathState(JUST_DIED) and only for Creatures or Pets
 
         JustKilledCreature((Creature*)pVictim);
 
@@ -1077,8 +1074,6 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
         }
         else                                                // Killed creature
         {
-            pVictim->m_deathState = DEAD;                   // so that isAlive, isDead return expected results in the called hooks of JustKilledCreature
-                                                            // must be used only shortly before SetDeathState(JUST_DIED) and only for Creatures or Pets
             JustKilledCreature((Creature*)pVictim);
 
             DEBUG_FILTER_LOG(LOG_FILTER_DAMAGE,"Unit::DealDamage %s JUST_DIED", pVictim->GetGuidStr().c_str());
@@ -10266,7 +10261,7 @@ void Unit::SetSpeedRate(UnitMoveType mtype, float rate, bool forced)
         m_speed_rate[mtype] = rate;
         propagateSpeedChange();
 
-        const uint16 SetSpeed2Opc_table[MAX_MOVE_TYPE][2]=
+        const Opcodes SetSpeed2Opc_table[MAX_MOVE_TYPE][2]=
         {
             {MSG_MOVE_SET_WALK_SPEED,       SMSG_FORCE_WALK_SPEED_CHANGE},
             {MSG_MOVE_SET_RUN_SPEED,        SMSG_FORCE_RUN_SPEED_CHANGE},
@@ -10441,8 +10436,10 @@ bool Unit::TauntApply(Unit* taunter, bool isSingleEffect)
 
     if (!taunter 
         || (taunter->GetTypeId() == TYPEID_PLAYER && ((Player*)taunter)->isGameMaster())
-        || !taunter->isVisibleForOrDetect(this,this,true)
-        || IsFriendlyTo(taunter))
+        // FIXME - this checks really needed?
+        //|| !taunter->isVisibleForOrDetect(this,this,true)
+        //|| IsFriendlyTo(taunter)
+        )
         return false;
 
     Unit* target = getVictim();
@@ -10466,7 +10463,8 @@ bool Unit::TauntApply(Unit* taunter, bool isSingleEffect)
     }
 
     if (isSingleEffect)
-        getThreatManager().addThreat(taunter,getThreatManager().getCurrentVictim()->getThreat());
+        getThreatManager().addThreat(taunter, getThreatManager().getCurrentVictim() ? 
+                                              getThreatManager().getCurrentVictim()->getThreat() : 1.0f);
     else
         getThreatManager().tauntApply(taunter);
 
@@ -12699,7 +12697,7 @@ Unit* Unit::SelectRandomUnfriendlyTarget(Unit* except /*= NULL*/, float radius /
 {
     std::list<Unit *> targets;
 
-    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(this, this, radius);
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(this, radius);
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
     Cell::VisitAllObjects(this, searcher, radius);
 
@@ -13062,7 +13060,7 @@ void Unit::NearTeleportTo( float x, float y, float z, float orientation, bool ca
     else
     {
         ExitVehicle(true);
-        GetMap()->CreatureRelocation((Creature*)this, x, y, z, orientation);
+        GetMap()->Relocation((Creature*)this, x, y, z, orientation);
         SendHeartBeat();
     }
 }
@@ -13219,7 +13217,7 @@ void Unit::ExitVehicle(bool forceDismount)
 
     Unit* vehicleBase = GetVehicle()->GetBase();
 
-    if (!vehicleBase || !vehicleBase->IsInWorld())
+    if (!vehicleBase || !vehicleBase->IsInWorld() || !vehicleBase->IsInitialized())
     {
         sLog.outError("Unit::ExitVehicle: %s try leave vehicle, but no vehicle base in world!", GetObjectGuid().GetString().c_str());
         _ExitVehicle();

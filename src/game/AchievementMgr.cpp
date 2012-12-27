@@ -2107,15 +2107,15 @@ void AchievementMgr::UpdateAchievementCriteria(AchievementCriteriaTypes type, ui
                 // those requirements couldn't be found in the dbc
                 switch(achievementCriteria->referredAchievement)
                 {
-                    case 252:                   // With a Little Helper from My Friends (Event: Feast of Winter Veil)
+                     case 252:                   // With a Little Helper from My Friends (Event: Feast of Winter Veil)
                     {
                         Player* plr = GetPlayer();
-                        if (!((plr->GetAura(26274,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3829)) ||
-                            !((plr->GetAura(26157,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3826)) ||
-                            !((plr->GetAura(26272,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3827)) ||
-                            !((plr->GetAura(26273,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3828)) )
-                            continue;
-                        break;
+                        if (((plr->HasAura(26274,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3829)) ||
+                            ((plr->GetAura(26157,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3826)) ||
+                            ((plr->GetAura(26272,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3827)) ||
+                            ((plr->GetAura(26273,EFFECT_INDEX_0)) && (achievementCriteria->ID == 3828)) )
+                            break;
+                        continue;
                     }
                     case 381:                   // World Honorable Kills
                     {

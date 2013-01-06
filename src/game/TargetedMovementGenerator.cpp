@@ -131,7 +131,7 @@ bool TargetedMovementGeneratorMedium<T, D>::Update(T& owner, const uint32& time_
     if (!i_target.isValid() || !i_target->IsInWorld())
         return false;
 
-    if (owner.hasUnitState(UNIT_STAT_NOT_MOVE))
+    if (owner.hasUnitState(UNIT_STAT_NOT_MOVE) || (owner.IsInUnitState(UNIT_ACTION_CHASE) && owner.hasUnitState(UNIT_STAT_NO_COMBAT_MOVEMENT)))
     {
         D::_clearUnitStateMove(owner);
         return true;
@@ -279,6 +279,12 @@ void ChaseMovementGenerator<T>::Finalize(T& owner)
 template<class T>
 void ChaseMovementGenerator<T>::Interrupt(T& owner)
 {
+    if (!owner.movespline->Finalized())
+    {
+        Location loc = owner.movespline->ComputePosition();
+        owner.SetPosition(loc.x,loc.y,loc.z,loc.orientation);
+        owner.movespline->_Interrupt();
+    }
     owner.clearUnitState(UNIT_STAT_CHASE | UNIT_STAT_CHASE_MOVE);
 }
 
@@ -341,6 +347,12 @@ void FollowMovementGenerator<T>::Finalize(T& owner)
 template<class T>
 void FollowMovementGenerator<T>::Interrupt(T& owner)
 {
+    if (!owner.movespline->Finalized())
+    {
+        Location loc = owner.movespline->ComputePosition();
+        owner.SetPosition(loc.x,loc.y,loc.z,loc.orientation);
+        owner.movespline->_Interrupt();
+    }
     owner.clearUnitState(UNIT_STAT_FOLLOW | UNIT_STAT_FOLLOW_MOVE);
     _updateSpeed(owner);
 }

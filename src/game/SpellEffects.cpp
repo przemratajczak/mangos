@@ -3710,7 +3710,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     m_caster->CastSpell(unitTarget, 71264, true);
                     return;
                 }
-                case 72202:                                 // Blade power
+                case 72202:                                 // Blood Link
                 {
                     if (!unitTarget)
                         return;
@@ -3718,12 +3718,27 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     unitTarget->CastSpell(unitTarget, 72195, true);
                     break;
                 }
+                case 72254:                                 // Mark of the fallen Champion Search Spell
+                {
+                    if (!unitTarget)
+                        return;
+                    m_caster->CastSpell(unitTarget, m_spellInfo->CalculateSimpleValue(EFFECT_INDEX_0), false);
+                    return;
+                }
                 case 72261:                                 // Delirious Slash
                 {
                     if (!unitTarget)
                         return;
 
                     m_caster->CastSpell(unitTarget, m_caster->CanReachWithMeleeAttack(unitTarget) ? 71623 : 72264, true);
+                    return;
+                }
+                case 72379:                                 // Bloodnova
+                {
+                    if (!m_originalCaster || !unitTarget)
+                        return;
+
+                    m_originalCaster->CastSpell(unitTarget, 72380, true);
                     return;
                 }
                 default:
@@ -4954,6 +4969,8 @@ void Spell::EffectTriggerMissileSpell(SpellEffectIndex effect_idx)
         float x,y,z;
         m_targets.getDestination(x, y, z);
 
+        Unit* target = unitTarget ? unitTarget : m_caster;
+
         MaNGOS::NormalizeMapCoord(x);
         MaNGOS::NormalizeMapCoord(y);
 
@@ -4964,7 +4981,7 @@ void Spell::EffectTriggerMissileSpell(SpellEffectIndex effect_idx)
             triggered_spell_id,
             x,y,z);
 
-        unitTarget->CastSpell(x, y, z, spellInfo, true, m_CastItem, NULL, m_originalCasterGUID, m_spellInfo);
+        target->CastSpell(x, y, z, spellInfo, true, m_CastItem, NULL, m_originalCasterGUID, m_spellInfo);
     }
     else
     {
@@ -12735,12 +12752,12 @@ void Spell::EffectBind(SpellEffectIndex eff_idx)
             return;
         }
 
-        loc.mapid       = st->target_mapId;
+        loc.SetMapId(st->target_mapId);
         loc.coord_x     = st->target_X;
         loc.coord_y     = st->target_Y;
         loc.coord_z     = st->target_Z;
         loc.orientation = st->target_Orientation;
-        area_id = sTerrainMgr.GetAreaId(loc.mapid, loc.coord_x, loc.coord_y, loc.coord_z);
+        area_id = sTerrainMgr.GetAreaId(loc.GetMapId(), loc.coord_x, loc.coord_y, loc.coord_z);
     }
     else
     {
@@ -12755,14 +12772,14 @@ void Spell::EffectBind(SpellEffectIndex eff_idx)
     data << float(loc.coord_x);
     data << float(loc.coord_y);
     data << float(loc.coord_z);
-    data << uint32(loc.mapid);
+    data << uint32(loc.GetMapId());
     data << uint32(area_id);
     player->SendDirectMessage( &data );
 
     DEBUG_LOG("New Home Position X is %f", loc.coord_x);
     DEBUG_LOG("New Home Position Y is %f", loc.coord_y);
     DEBUG_LOG("New Home Position Z is %f", loc.coord_z);
-    DEBUG_LOG("New Home MapId is %u", loc.mapid);
+    DEBUG_LOG("New Home MapId is %u", loc.GetMapId());
     DEBUG_LOG("New Home AreaId is %u", area_id);
 
     // zone update

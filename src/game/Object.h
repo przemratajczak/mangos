@@ -29,6 +29,7 @@
 #include "SharedDefines.h"
 #include "WorldObjectEvents.h"
 #include "WorldLocation.h"
+#include "LootMgr.h"
 
 #include <set>
 #include <string>
@@ -469,7 +470,7 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         void GetPosition( float &x, float &y, float &z ) const
             { x = m_position.x; y = m_position.y; z = m_position.z; }
         void GetPosition( WorldLocation &loc ) const
-            { loc.mapid = m_mapId; GetPosition(loc.coord_x, loc.coord_y, loc.coord_z); loc.orientation = GetOrientation(); }
+            { loc.SetMapId(m_mapId); GetPosition(loc.coord_x, loc.coord_y, loc.coord_z); loc.orientation = GetOrientation(); }
         float GetOrientation( ) const { return m_position.o; }
 
         virtual Transport* GetTransport() const { return NULL; }
@@ -619,6 +620,9 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         Creature* SummonCreature(uint32 id, float x, float y, float z, float ang,TempSummonType spwtype,uint32 despwtime, bool asActiveObject = false);
 
         GameObject* SummonGameobject(uint32 id, float x, float y, float z, float angle, uint32 despwtime);
+
+        // Loot System
+        Loot loot;
 
         void StartGroupLoot(Group* group, uint32 timer);
         void StopGroupLoot();

@@ -998,18 +998,10 @@ void Aura::PersistentAreaAuraUpdate(uint32 diff)
 
     // remove the aura if its caster or the dynamic object causing it was removed
     // or if the target moves too far from the dynamic object
-    if (Unit *caster = GetCaster())
+    if (Unit* pCaster = GetCaster())
     {
-        DynamicObject *dynObj = caster->GetDynObject(GetId(), GetEffIndex());
-        if (dynObj)
-        {
-            if (GetHolder()->IsPermanent() && !GetTarget()->IsWithinDistInMap(dynObj, dynObj->GetRadius()))
-            {
-                remove = true;
-                dynObj->RemoveAffected(GetTarget());        // let later reapply if target return to range
-            }
-        }
-        else
+        DynamicObject* dynObj = pCaster->GetEffectiveDynObject(GetId(), GetEffIndex(), GetTarget());
+        if (!dynObj)
             remove = true;
     }
     else
@@ -1770,8 +1762,17 @@ void Aura::TriggerSpell()
 //                    case 36556: break;
 //                    // Cursed Scarab Despawn Periodic
 //                    case 36561: break;
-//                    // Vision Guide
-//                    case 36573: break;
+                    case 36573:                             // Vision Guide
+                    {
+                    // FIXME - this must be maked over 37715 reconstruction (spell_dbc)
+                        if (GetAuraTicks() == 10 && target->GetTypeId() == TYPEID_PLAYER)
+                        {
+                            ((Player*)target)->AreaExploredOrEventHappens(10525);
+                            target->RemoveAurasDueToSpell(36573);
+                        }
+
+                        return;
+                    }
 //                    // Cannon Charging (platform)
 //                    case 36785: break;
 //                    // Cannon Charging (self)
@@ -2547,6 +2548,11 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         target->RemoveAurasDueToSpell(32346);
                         return;
                     }
+                    case 36587:                             // Vision Guide
+                    {
+                        target->CastSpell(target, 36573, true, NULL, this);
+                        return;
+                    }
                     // Gender spells
                     case 38224:                             // Illidari Agent Illusion
                     case 37096:                             // Blood Elf Illusion
@@ -3145,6 +3151,11 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
             {
                 // Defensive Aura
                 target->RemoveAurasDueToSpell(41105);
+                return;
+            }
+            case 42385:                                     // Alcaz Survey Aura
+            {
+                target->CastSpell(target, 42316, true, NULL, this);
                 return;
             }
             case 42454:                                     // Captured Totem

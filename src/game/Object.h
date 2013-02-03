@@ -118,7 +118,7 @@ struct UpdateFieldData
 class MANGOS_DLL_SPEC Object
 {
     public:
-        virtual ~Object ( );
+        virtual ~Object ();
 
         const bool& IsInWorld() const { return m_inWorld; }
         virtual void AddToWorld()
@@ -371,7 +371,7 @@ class MANGOS_DLL_SPEC Object
         virtual bool HasInvolvedQuest(uint32 /* quest_id */) const { return false; }
 
     protected:
-        Object ( );
+        Object();
 
         void _InitValues();
         void _Create(uint32 guidlow, uint32 entry, HighGuid guidhigh) { _Create(ObjectGuid(guidhigh, entry, guidlow)); }
@@ -419,6 +419,11 @@ class MANGOS_DLL_SPEC Object
 
 struct WorldObjectChangeAccumulator;
 
+namespace Movement
+{
+    class MoveSpline;
+};
+
 class MANGOS_DLL_SPEC WorldObject : public Object
 {
     friend struct WorldObjectChangeAccumulator;
@@ -446,7 +451,7 @@ class MANGOS_DLL_SPEC WorldObject : public Object
                 WorldObject * const m_obj;
         };
 
-        virtual ~WorldObject ( ) {}
+        virtual ~WorldObject();
 
         virtual void Update(uint32 /*update_diff*/, uint32 /*time_diff*/) {}
 
@@ -517,6 +522,8 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         void SetName(const std::string& newname) { m_name=newname; }
 
         virtual const char* GetNameForLocaleIdx(int32 /*locale_idx*/) const { return GetName(); }
+
+        float GetDistance(WorldLocation const& loc) const;
 
         float GetDistance( const WorldObject* obj ) const;
         float GetDistance(float x, float y, float z) const;
@@ -661,6 +668,10 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         void AddEvent(BasicEvent* Event, uint64 e_time, bool set_addtime = true);
 
         virtual bool IsVehicle() const { return false; }
+
+        // Movement
+        Movement::MoveSpline* movespline;
+        ShortTimeTracker m_movesplineTimer;
 
     protected:
         explicit WorldObject();

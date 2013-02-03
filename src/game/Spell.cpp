@@ -2275,6 +2275,9 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                     for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                     {
+                        if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
+                            continue;
+
                         // only creature entries supported for this target type
                         if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
                             continue;
@@ -2446,6 +2449,8 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                     for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                     {
+                        if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
+                            continue;
                         // only creature entries supported for this target type
                         if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
                             continue;
@@ -2512,6 +2517,9 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             {
                 for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                 {
+                    if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
+                        continue;
+
                     if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
                     {
                         // search all GO's with entry, within range of m_destN
@@ -4141,23 +4149,21 @@ void Spell::_handle_finish_phase()
 void Spell::SendSpellCooldown()
 {
     if (m_caster->GetTypeId() != TYPEID_PLAYER)
-        return;
-
-    Player* _player = (Player*)m_caster;
-
-    // mana/health/etc potions, disabled by client (until combat out as declarate)
-    if (m_CastItem && m_CastItem->IsPotion())
     {
-        // need in some way provided data for Spell::finish SendCooldownEvent
-        _player->SetLastPotionId(m_CastItem->GetEntry());
-        return;
+        // mana/health/etc potions, disabled by client (until combat out as declarate)
+        if (m_CastItem && m_CastItem->IsPotion())
+        {
+            // need in some way provided data for Spell::finish SendCooldownEvent
+            ((Player*)m_caster)->SetLastPotionId(m_CastItem->GetEntry());
+            return;
+        }
     }
 
     // (1) have infinity cooldown but set at aura apply, (2) passive cooldown at triggering
     if (m_spellInfo->HasAttribute(SPELL_ATTR_DISABLED_WHILE_ACTIVE) || m_spellInfo->HasAttribute(SPELL_ATTR_PASSIVE))
         return;
 
-    _player->AddSpellAndCategoryCooldowns(m_spellInfo, m_CastItem ? m_CastItem->GetEntry() : 0);
+    m_caster->AddSpellAndCategoryCooldowns(m_spellInfo, m_CastItem ? m_CastItem->GetEntry() : 0);
 }
 
 void Spell::update(uint32 difftime)
@@ -5486,8 +5492,7 @@ Unit* Spell::GetPrefilledUnitTargetOrUnitTarget(SpellEffectIndex effIndex) const
 SpellCastResult Spell::CheckCast(bool strict)
 {
     // check cooldowns to prevent cheating (ignore passive spells, that client side visual only)
-    if (m_caster->GetTypeId()==TYPEID_PLAYER && !m_spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) &&
-        ((Player*)m_caster)->HasSpellCooldown(m_spellInfo->Id))
+    if (!m_spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) && m_caster->HasSpellCooldown(m_spellInfo))
     {
         if (m_triggeredByAuraSpell)
             return SPELL_FAILED_DONT_REPORT;
@@ -5954,6 +5959,9 @@ SpellCastResult Spell::CheckCast(bool strict)
 
                 for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                 {
+                    if (!i_spellST->second.CanHitWithSpellEffect(SpellEffectIndex(j)))
+                        continue;
+
                     switch(i_spellST->second.type)
                     {
                         case SPELL_TARGET_TYPE_GAMEOBJECT:
@@ -6957,7 +6965,7 @@ SpellCastResult Spell::CheckPetCast(Unit* target)
             }
         }
                                                             //cooldown
-        if(((Creature*)m_caster)->HasSpellCooldown(m_spellInfo->Id))
+        if(m_caster->HasSpellCooldown(m_spellInfo))
             return SPELL_FAILED_NOT_READY;
     }
 
@@ -8711,8 +8719,7 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
             if (targetUnitMap.empty())
             {
                 // no valid targets, clear cooldown at fail
-                if (m_caster->GetTypeId() == TYPEID_PLAYER)
-                    ((Player*)m_caster)->RemoveSpellCooldown(m_spellInfo->Id, true);
+                m_caster->RemoveSpellCooldown(m_spellInfo->Id, true);
                 SendCastResult(SPELL_FAILED_NO_VALID_TARGETS);
                 finish(false);
             }
@@ -8754,8 +8761,7 @@ bool Spell::FillCustomTargetMap(SpellEffectIndex i, UnitList &targetUnitMap)
             if (targetUnitMap.empty())
             {
                 // no valid targets, clear cooldown at fail
-                if (m_caster->GetTypeId() == TYPEID_PLAYER)
-                    ((Player*)m_caster)->RemoveSpellCooldown(m_spellInfo->Id, true);
+                m_caster->RemoveSpellCooldown(m_spellInfo->Id, true);
                 SendCastResult(SPELL_FAILED_NO_VALID_TARGETS);
                 finish(false);
             }

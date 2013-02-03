@@ -192,7 +192,6 @@ void GlobalCooldownMgr::CancelGlobalCooldown(SpellEntry const* spellInfo)
 // Methods of class Unit
 
 Unit::Unit() :
-    movespline(new Movement::MoveSpline()),
     m_charmInfo(NULL),
     i_motionMaster(this),
     m_ThreatManager(*this),
@@ -329,7 +328,6 @@ Unit::~Unit()
         CleanupDeletedHolders(true);
 
         delete m_charmInfo;
-        delete movespline;
     }
     delete m_HostileRefManager;
 
@@ -769,7 +767,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
 
         ((Creature*)pVictim)->SetLootRecipient(this);
 
-        JustKilledCreature((Creature*)pVictim);
+        JustKilledCreature((Creature*)pVictim, NULL);
 
         pVictim->SetDeathState(JUST_DIED);
         pVictim->SetHealth(0);
@@ -1074,7 +1072,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
         }
         else                                                // Killed creature
         {
-            JustKilledCreature((Creature*)pVictim);
+            JustKilledCreature((Creature*)pVictim, player_tap);
 
             DEBUG_FILTER_LOG(LOG_FILTER_DAMAGE,"Unit::DealDamage %s JUST_DIED", pVictim->GetGuidStr().c_str());
             pVictim->SetDeathState(JUST_DIED);              // if !spiritOfRedemtionTalentReady always true for unit
@@ -1229,7 +1227,7 @@ struct PetOwnerKilledUnitHelper
     Unit* m_victim;
 };
 
-void Unit::JustKilledCreature(Creature* victim)
+void Unit::JustKilledCreature(Creature* victim, Player* responsiblePlayer)
 {
     if (!victim)
         return;
@@ -1300,6 +1298,9 @@ void Unit::JustKilledCreature(Creature* victim)
     // Notify the outdoor pvp script
     if (OutdoorPvP* outdoorPvP = sOutdoorPvPMgr.GetScript(GetZoneId()))
         outdoorPvP->HandleCreatureDeath(victim);
+
+    // Start creature death script
+    GetMap()->ScriptsStart(sCreatureDeathScripts, victim->GetEntry(), victim, responsiblePlayer ? responsiblePlayer : this);
 
     if (victim->IsLinkingEventTrigger())
         victim->GetMap()->GetCreatureLinkingHolder()->DoCreatureLinkingEvent(LINKING_EVENT_DIE, victim);
@@ -2392,8 +2393,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit *pCaster, DamageInfo* damageInfo,
                     if (spellProto->SpellIconID == 2109)
                     {
                         if (!preventDeathSpell &&
-                            GetTypeId()==TYPEID_PLAYER &&       // Only players
-                            !((Player*)this)->HasSpellCooldown(31231) &&
+                            !HasSpellCooldown(31231) &&
                                                                 // Only if no cooldown
                             roll_chance_i((*i)->GetModifier()->m_amount))
                                                                     // Only if roll
@@ -2771,7 +2771,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit *pCaster, DamageInfo* damageInfo,
                 if (preventDeathSpell->SpellIconID == 2109)
                 {
                     CastSpell(this,31231,true);
-                    ((Player*)this)->AddSpellCooldown(31231,0,time(NULL)+60);
+                    AddSpellCooldown(31231,0,time(NULL)+60);
                     // with health > 10% lost health until health==10%, in other case no losses
                     uint32 health10 = GetMaxHealth()/10;
                     RemainingDamage = GetHealth() > health10 ? GetHealth() - health10 : 0;
@@ -4350,7 +4350,7 @@ void Unit::SetInFront(Unit const* target)
 
 void Unit::SetFacingTo(float ori)
 {
-    Movement::MoveSplineInit init(*this);
+    Movement::MoveSplineInit<Unit*> init(*this);
     init.SetFacing(ori);
     init.Launch();
 }
@@ -6404,7 +6404,7 @@ void Unit::AddGameObject(GameObject* gameObj)
         // Need disable spell use for owner
         if (createBySpell && createBySpell->HasAttribute(SPELL_ATTR_DISABLED_WHILE_ACTIVE))
             // note: item based cooldowns and cooldown spell mods with charges ignored (unknown existing cases)
-            ((Player*)this)->AddSpellAndCategoryCooldowns(createBySpell, 0, true);
+            AddSpellAndCategoryCooldowns(createBySpell, 0, true);
     }
 }
 
@@ -9700,7 +9700,7 @@ void Unit::ClearInCombat()
         if (isCharmed() || cThis->IsPet())
             RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PET_IN_COMBAT);
 
-        if (cThis->GetCreatureInfo()->unit_flags & UNIT_FLAG_OOC_NOT_ATTACKABLE && !(cThis->GetTemporaryFactionFlags() & TEMPFACTION_TOGGLE_OOC_NOT_ATTACK))
+        if ((cThis->GetCreatureInfo()->unit_flags & UNIT_FLAG_OOC_NOT_ATTACKABLE) && !(cThis->GetTemporaryFactionFlags() & TEMPFACTION_TOGGLE_OOC_NOT_ATTACK))
             SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_OOC_NOT_ATTACKABLE);
 
         clearUnitState(UNIT_STAT_ATTACK_PLAYER);
@@ -12046,7 +12046,6 @@ void Unit::DoPetCastSpell(Player* owner, uint8 cast_count, SpellCastTargets* tar
 
     if (pet && result == SPELL_CAST_OK)
     {
-        pet->AddCreatureSpellCooldown(spellInfo->Id);
         if (GetObjectGuid().IsPet())
         {
             //10% chance to play special pet attack talk, else growl
@@ -12104,21 +12103,23 @@ uint32 createProcExtendMask(DamageInfo *damageInfo, SpellMissInfo missCondition)
     uint32 procEx = PROC_EX_NONE;
     // Check victim state
     if (missCondition!=SPELL_MISS_NONE)
-    switch (missCondition)
     {
-        case SPELL_MISS_MISS:    procEx|=PROC_EX_MISS;   break;
-        case SPELL_MISS_RESIST:  procEx|=PROC_EX_RESIST; break;
-        case SPELL_MISS_DODGE:   procEx|=PROC_EX_DODGE;  break;
-        case SPELL_MISS_PARRY:   procEx|=PROC_EX_PARRY;  break;
-        case SPELL_MISS_BLOCK:   procEx|=PROC_EX_BLOCK;  break;
-        case SPELL_MISS_EVADE:   procEx|=PROC_EX_EVADE;  break;
-        case SPELL_MISS_IMMUNE:  procEx|=PROC_EX_IMMUNE; break;
-        case SPELL_MISS_IMMUNE2: procEx|=PROC_EX_IMMUNE; break;
-        case SPELL_MISS_DEFLECT: procEx|=PROC_EX_DEFLECT;break;
-        case SPELL_MISS_ABSORB:  procEx|=PROC_EX_ABSORB; break;
-        case SPELL_MISS_REFLECT: procEx|=PROC_EX_REFLECT;break;
-        default:
-            break;
+        switch (missCondition)
+        {
+            case SPELL_MISS_MISS:    procEx|=PROC_EX_MISS;   break;
+            case SPELL_MISS_RESIST:  procEx|=PROC_EX_RESIST; break;
+            case SPELL_MISS_DODGE:   procEx|=PROC_EX_DODGE;  break;
+            case SPELL_MISS_PARRY:   procEx|=PROC_EX_PARRY;  break;
+            case SPELL_MISS_BLOCK:   procEx|=PROC_EX_BLOCK;  break;
+            case SPELL_MISS_EVADE:   procEx|=PROC_EX_EVADE;  break;
+            case SPELL_MISS_IMMUNE:  procEx|=PROC_EX_IMMUNE; break;
+            case SPELL_MISS_IMMUNE2: procEx|=PROC_EX_IMMUNE; break;
+            case SPELL_MISS_DEFLECT: procEx|=PROC_EX_DEFLECT;break;
+            case SPELL_MISS_ABSORB:  procEx|=PROC_EX_ABSORB; break;
+            case SPELL_MISS_REFLECT: procEx|=PROC_EX_REFLECT;break;
+            default:
+                break;
+        }
     }
     else
     {
@@ -12442,7 +12443,7 @@ void Unit::StopMoving()
     if (!IsInWorld())
         return;
 
-    Movement::MoveSplineInit init(*this);
+    Movement::MoveSplineInit<Unit*> init(*this);
     init.SetFacing(GetOrientation());
     init.Launch();
 }
@@ -13741,16 +13742,10 @@ void Unit::ScheduleAINotify(uint32 delay)
 
 void Unit::OnRelocated()
 {
-    // switch to use G3D::Vector3 is good idea, maybe
-    float dx = m_last_notified_position.x - GetPositionX();
-    float dy = m_last_notified_position.y - GetPositionY();
-    float dz = m_last_notified_position.z - GetPositionZ();
-    float distsq = dx*dx+dy*dy+dz*dz;
-    if (distsq > World::GetRelocationLowerLimitSq())
+    float dist = GetDistance(m_last_notified_position);
+    if (dist > World::GetRelocationLowerLimit())
     {
-        m_last_notified_position.x = GetPositionX();
-        m_last_notified_position.y = GetPositionY();
-        m_last_notified_position.z = GetPositionZ();
+        m_last_notified_position = GetPosition();
 
         GetViewPoint().Call_UpdateVisibilityForOwner();
         UpdateObjectVisibility();
@@ -14030,9 +14025,6 @@ bool Unit::HasMorePoweredBuff(uint32 spellId)
 
 void Unit::UpdateSplineMovement(uint32 t_diff)
 {
-    enum{
-        POSITION_UPDATE_DELAY = 400,
-    };
 
     if (movespline->Finalized())
         return;
@@ -14046,7 +14038,7 @@ void Unit::UpdateSplineMovement(uint32 t_diff)
     m_movesplineTimer.Update(t_diff);
     if (m_movesplineTimer.Passed() || arrived)
     {
-        m_movesplineTimer.Reset(POSITION_UPDATE_DELAY);
+        m_movesplineTimer.Reset(sWorld.getConfig(CONFIG_UINT32_POSITION_UPDATE_DELAY));
         Location loc = movespline->ComputePosition();
 
         if (IsBoarded())
@@ -14075,7 +14067,7 @@ uint32 Unit::GetResistance(SpellSchoolMask schoolMask) const
         {
             int32 schoolRes = (GetObjectGuid().IsPlayer() || (GetObjectGuid().IsPet() && GetOwner() && GetOwner()->GetObjectGuid().IsPlayer())) ?
                               GetResistance(SpellSchools(i)) :
-                              floor(GetResistanceBuffMods(SpellSchools(i), true) - GetResistanceBuffMods(SpellSchools(i), false));
+                              floor(GetResistanceBuffMods(SpellSchools(i), true) + GetResistanceBuffMods(SpellSchools(i), false));
             if (resistance < schoolRes)
                 resistance = schoolRes;
             // Use maximal resistance from mask (not lower then 0)
@@ -14171,5 +14163,213 @@ void Unit::SetLastManaUse()
         int32 diff = lastRegenInterval - ((Player*)this)->GetRegenTimer();
         if (diff > 0)
             ((Player*)this)->RegenerateAll(diff);
+    }
+}
+
+void Unit::AddSpellCooldown(uint32 spellid, uint32 itemid, time_t end_time)
+{
+    SpellCooldown sc;
+    sc.end = end_time;
+    sc.itemid = itemid;
+    MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
+    m_spellCooldowns[spellid] = sc;
+}
+
+void Unit::RemoveSpellCooldown(uint32 spell_id, bool update /* = false */)
+{
+    MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
+    m_spellCooldowns.erase(spell_id);
+
+    if (update && GetTypeId() == TYPEID_PLAYER)
+        ((Player*)this)->SendClearCooldown(spell_id, this);
+}
+
+void Unit::RemoveAllSpellCooldown()
+{
+    if (!m_spellCooldowns.empty())
+    {
+        if (GetTypeId() == TYPEID_PLAYER)
+        {
+            for (SpellCooldowns::const_iterator itr = m_spellCooldowns.begin();itr != m_spellCooldowns.end(); ++itr)
+                ((Player*)this)->SendClearCooldown(itr->first, this);
+        }
+        else if (Player* pOwner = GetSpellModOwner())
+        {
+            for (SpellCooldowns::const_iterator itr = m_spellCooldowns.begin();itr != m_spellCooldowns.end(); ++itr)
+                pOwner->SendClearCooldown(itr->first, this);
+        }
+
+
+        MAPLOCK_WRITE(this, MAP_LOCK_TYPE_DEFAULT);
+        m_spellCooldowns.clear();
+    }
+}
+
+void Unit::RemoveSpellCategoryCooldown(uint32 cat, bool update /* = false */)
+{
+    if (m_spellCooldowns.empty())
+        return;
+
+    SpellCategoryStore::const_iterator ct = sSpellCategoryStore.find(cat);
+    if (ct == sSpellCategoryStore.end())
+        return;
+
+    const SpellCategorySet& ct_set = ct->second;
+    SpellCategorySet current_set;
+    SpellCategorySet intersection_set;
+    {
+        MAPLOCK_READ(this, MAP_LOCK_TYPE_DEFAULT);
+        std::transform(m_spellCooldowns.begin(), m_spellCooldowns.end(), std::inserter(current_set, current_set.begin()), select1st<SpellCooldowns::value_type>());
+    }
+
+    std::set_intersection(ct_set.begin(),ct_set.end(), current_set.begin(),current_set.end(),std::inserter(intersection_set,intersection_set.begin()));
+
+    if (intersection_set.empty())
+        return;
+
+    for (SpellCategorySet::const_iterator itr = intersection_set.begin(); itr != intersection_set.end(); ++itr)
+        RemoveSpellCooldown(*itr, update);
+}
+
+void Unit::AddSpellAndCategoryCooldowns(SpellEntry const* spellInfo, uint32 itemId /*= 0*/, bool infinityCooldown  /*= false*/)
+{
+    // init cooldown values
+    uint32 category   = 0;
+    int32 cooldown    = -1;
+    int32 categorycooldown = -1;
+
+    // some special item spells without correct cooldown in SpellInfo
+    // cooldown information stored in item prototype
+    // This used in same way in WorldSession::HandleItemQuerySingleOpcode data sending to client.
+
+    if (itemId)
+    {
+        if (ItemPrototype const* proto = ObjectMgr::GetItemPrototype(itemId))
+        {
+            for (int idx = 0; idx < MAX_ITEM_PROTO_SPELLS; ++idx)
+            {
+                if (proto->Spells[idx].SpellId == spellInfo->Id)
+                {
+                    category    = proto->Spells[idx].SpellCategory;
+                    cooldown    = proto->Spells[idx].SpellCooldown;
+                    categorycooldown = proto->Spells[idx].SpellCategoryCooldown;
+                    break;
+                }
+            }
+        }
+    }
+
+    // if no cooldown found above then base at DBC data
+    if (cooldown < 0 && categorycooldown < 0)
+    {
+        category = spellInfo->Category;
+        cooldown = spellInfo->RecoveryTime;
+        categorycooldown = spellInfo->CategoryRecoveryTime;
+    }
+
+    time_t curTime = time(NULL);
+
+    time_t catrecTime;
+    time_t recTime;
+
+    // overwrite time for selected category
+    if (infinityCooldown)
+    {
+        // use +MONTH as infinity mark for spell cooldown (will checked as MONTH/2 at save ans skipped)
+        // but not allow ignore until reset or re-login
+        catrecTime = categorycooldown > 0 ? curTime+infinityCooldownDelay : 0;
+        recTime    = cooldown    > 0 ? curTime+infinityCooldownDelay : catrecTime;
+    }
+    else
+    {
+        // shoot spells used equipped item cooldown values already assigned in GetAttackTime(RANGED_ATTACK)
+        // prevent 0 cooldowns set by another way
+        if (cooldown <= 0 && categorycooldown <= 0 && (category == 76 || (IsAutoRepeatRangedSpell(spellInfo) && spellInfo->Id != SPELL_ID_AUTOSHOT)))
+            cooldown = GetAttackTime(RANGED_ATTACK);
+
+        // Now we have cooldown data (if found any), time to apply mods if we are a player, or a pet from player
+        if (Player* modOwner = GetSpellModOwner())
+        {
+            if (cooldown > 0)
+                modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_COOLDOWN, cooldown);
+
+            if (categorycooldown > 0)
+                modOwner->ApplySpellMod(spellInfo->Id, SPELLMOD_COOLDOWN, categorycooldown);
+        }
+        else if (GetTypeId() == TYPEID_PLAYER)
+        {
+            if (cooldown > 0)
+                ((Player*)this)->ApplySpellMod(spellInfo->Id, SPELLMOD_COOLDOWN, cooldown);
+
+            if (categorycooldown > 0)
+                ((Player*)this)->ApplySpellMod(spellInfo->Id, SPELLMOD_COOLDOWN, categorycooldown);
+        }
+
+        // replace negative cooldowns by 0
+        if (cooldown < 0) cooldown = 0;
+        if (categorycooldown < 0) categorycooldown = 0;
+
+        // no cooldown after applying spell mods
+        if (cooldown == 0 && categorycooldown == 0)
+            return;
+
+        catrecTime = categorycooldown ? curTime+categorycooldown/IN_MILLISECONDS : 0;
+        recTime    = cooldown ? curTime+cooldown/IN_MILLISECONDS : catrecTime;
+    }
+
+    // self spell cooldown
+    if (recTime > 0)
+        AddSpellCooldown(spellInfo->Id, itemId, recTime);
+
+    // category spells
+    if (category && categorycooldown > 0)
+    {
+        SpellCategoryStore::const_iterator i_scstore = sSpellCategoryStore.find(category);
+        if (i_scstore != sSpellCategoryStore.end())
+        {
+            for (SpellCategorySet::const_iterator i_scset = i_scstore->second.begin(); i_scset != i_scstore->second.end(); ++i_scset)
+            {
+                if (*i_scset == spellInfo->Id)              // skip main spell, already handled above
+                    continue;
+
+                AddSpellCooldown(*i_scset, itemId, catrecTime);
+            }
+        }
+    }
+}
+
+bool Unit::HasSpellCooldown(SpellEntry const* spellInfo) const
+{
+    SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spellInfo->Id);
+    return itr != m_spellCooldowns.end() && itr->second.end > time(NULL);
+}
+
+bool Unit::HasSpellCooldown(uint32 spellId) const
+{
+    SpellEntry const* spellInfo = sSpellStore.LookupEntry(spellId);
+    return HasSpellCooldown(spellInfo);
+}
+
+time_t Unit::GetSpellCooldownDelay(SpellEntry const* spellInfo) const
+{
+    SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spellInfo->Id);
+    time_t t = time(NULL);
+    return itr != m_spellCooldowns.end() && itr->second.end > t ? itr->second.end - t : 0;
+}
+
+void Unit::RemoveOutdatedSpellCooldowns()
+{
+    // remove oudated
+    time_t curTime = time(NULL);
+    SpellCooldowns const* cm = GetSpellCooldownMap();
+    SpellCooldowns::const_iterator itr, next;
+    for( itr = cm->begin();itr != cm->end(); itr = next)
+    {
+        next = itr;
+        ++next;
+        if (itr->second.end <= curTime)
+        {
+            RemoveSpellCooldown(itr->first);
+        }
     }
 }

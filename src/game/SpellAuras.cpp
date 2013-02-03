@@ -5923,8 +5923,8 @@ void Aura::HandleModMechanicImmunity(bool apply, bool /*Real*/)
         }
     }
     // Heroic Fury (Intercept cooldown remove)
-    else if (apply && GetSpellProto()->Id == 60970 && target->GetTypeId() == TYPEID_PLAYER)
-        ((Player*)target)->RemoveSpellCooldown(20252, true);
+    else if (apply && GetSpellProto()->Id == 60970)
+        target->RemoveSpellCooldown(20252, true);
 
     // Potent Pheromones (Freya encounter)
     else if (GetId() == 64321 || GetId() == 62619)
@@ -10757,7 +10757,7 @@ void SpellAuraHolder::_AddSpellAuraHolder()
         if (m_spellProto->HasAttribute(SPELL_ATTR_DISABLED_WHILE_ACTIVE))
         {
             Item* castItem = m_castItemGuid ? ((Player*)caster)->GetItemByGuid(m_castItemGuid) : NULL;
-            ((Player*)caster)->AddSpellAndCategoryCooldowns(m_spellProto,castItem ? castItem->GetEntry() : 0,true);
+            caster->AddSpellAndCategoryCooldowns(m_spellProto,castItem ? castItem->GetEntry() : 0,true);
         }
     }
 
@@ -11781,25 +11781,8 @@ void SpellAuraHolder::HandleSpellSpecificBoosts(bool apply)
         }
         case SPELLFAMILY_DRUID:
         {
-            // Rejuvenation
-            if (GetSpellProto()->GetSpellFamilyFlags().test<CF_DRUID_REJUVENATION>())
-            {
-                Unit* caster = GetCaster();
-                if (!caster)
-                    return;
-
-                if (caster->HasAura(64760))                 // Item - Druid T8 Restoration 4P Bonus
-                {
-                    Aura* aura = GetAuraByEffectIndex(EFFECT_INDEX_0);
-                    if (!aura)
-                        return;
-
-                    int32 heal = aura->GetModifier()->m_amount;
-                    caster->CastCustomSpell(m_target, 64801, &heal, NULL, NULL, true, NULL);
-                }
-            }
             // Rip
-            else if (GetSpellProto()->GetSpellFamilyFlags().test<CF_DRUID_RIP>())
+            if (GetSpellProto()->GetSpellFamilyFlags().test<CF_DRUID_RIP>())
             {
                 Unit* caster = GetCaster();
                 if (!caster)

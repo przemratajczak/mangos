@@ -53,6 +53,8 @@ struct MANGOS_DLL_SPEC Location : public Vector3
     Location& operator = (Location const& loc);
     bool operator == (Location const& loc) const;
 
+    float GetDistance(Location const& loc) const;
+
     union
     {
         float orientation;
@@ -71,15 +73,15 @@ struct MANGOS_DLL_SPEC Position : public Location
     {};
 
     Position(float _x, float _y, float _z, float _o, uint32 phaseMask)
-        : Location(_x, _y, _z, _o), m_phaseMask(phaseMask), coord_x(x), coord_y(y), coord_z(z)
+        : Location(_x, _y, _z, _o), coord_x(x), coord_y(y), coord_z(z), m_phaseMask(phaseMask)
     {};
 
     Position(Position const &pos)
-        : Location(pos.x, pos.y, pos.z, pos.orientation), m_phaseMask(pos.GetPhaseMask()), coord_x(x), coord_y(y), coord_z(z)
+        : Location(pos.x, pos.y, pos.z, pos.orientation), coord_x(x), coord_y(y), coord_z(z), m_phaseMask(pos.GetPhaseMask())
     {}
 
     Position(Position const &pos, uint32 phaseMask)
-        : Location(pos.x, pos.y, pos.z, pos.orientation), m_phaseMask(phaseMask), coord_x(x), coord_y(y), coord_z(z)
+        : Location(pos.x, pos.y, pos.z, pos.orientation), coord_x(x), coord_y(y), coord_z(z), m_phaseMask(phaseMask)
     {}
 
     virtual ~Position()
@@ -98,6 +100,8 @@ struct MANGOS_DLL_SPEC Position : public Location
 
     Position& operator = (Position const& pos);
     bool operator == (Position const& pos) const;
+
+    float GetDistance(Position const& pos) const;
 };
 
 class WorldObject;
@@ -157,6 +161,8 @@ struct MANGOS_DLL_SPEC WorldLocation : public Position
     void SetOrientation(float value);
 
     WorldLocation& operator = (WorldLocation const& loc);
+
+    float GetDistance(WorldLocation const& loc) const;
 
     private:
     int32     mapid;                      // mapid    = -1 for not fully initialized WorldLocation

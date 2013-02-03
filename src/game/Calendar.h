@@ -22,6 +22,7 @@
 #include "Common.h"
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
+#include "World.h"
 
 enum CalendarEventType
 {
@@ -109,8 +110,8 @@ class CalendarInvite
 {
 public:
 
-    CalendarInvite() : m_calendarEventId(ObjectGuid()), InviteId(ObjectGuid()), InviteeGuid(ObjectGuid()), SenderGuid(ObjectGuid()),
-        LastUpdateTime(time(NULL)), Status(CALENDAR_STATUS_INVITED), Rank(CALENDAR_RANK_PLAYER), Text(), m_flags(0)
+    CalendarInvite() : InviteId(ObjectGuid()), InviteeGuid(ObjectGuid()), SenderGuid(ObjectGuid()), LastUpdateTime(time(NULL)),
+        Status(CALENDAR_STATUS_INVITED), Rank(CALENDAR_RANK_PLAYER), Text(), m_calendarEventId(ObjectGuid()), m_flags(0)
         {}
 
     CalendarInvite(CalendarEvent* calendarEvent, ObjectGuid inviteId, ObjectGuid senderGuid, ObjectGuid inviteeGuid, time_t statusTime,
@@ -155,7 +156,7 @@ public:
         }
 
     CalendarEvent() : EventId(ObjectGuid()), CreatorGuid(ObjectGuid()), GuildId(0), Type(CALENDAR_TYPE_OTHER), DungeonId(-1), EventTime(0),
-        Flags(0), UnknownTime(0), Title(), Description()
+        Flags(0), UnknownTime(0), Title(), Description(), m_flags(0)
         {
             m_Invitee.clear();
         }
@@ -177,6 +178,8 @@ public:
     bool RemoveInviteById(ObjectGuid inviteId, ObjectGuid const& removerGuid);
     void RemoveInviteByGuid(ObjectGuid const& playerGuid);
     void RemoveInviteById(ObjectGuid const& inviteId);
+
+    void SendMailOnRemoveEvent(ObjectGuid const& removerGuid);
 
     ObjectGuid EventId;
     ObjectGuid CreatorGuid;
@@ -219,6 +222,13 @@ class CalendarMgr : public MaNGOS::Singleton<CalendarMgr, MaNGOS::ClassLevelLock
         ObjectGuidGenerator<HIGHGUID_INVITE>             m_InviteGuids;
         uint32 GenerateEventLowGuid()                    { return m_EventGuids.Generate();  }
         uint32 GenerateInviteLowGuid()                   { return m_InviteGuids.Generate(); }
+
+        bool IsEventReadyForRemove(time_t eventTime)
+        {
+            int32 delaySec = sWorld.getConfig(CONFIG_INT32_CALENDAR_REMOVE_EXPIRED_EVENTS_DELAY);
+            return delaySec < 0 ? false : eventTime + time_t(delaySec) <= time(NULL);
+        }
+        void RemoveExpiredEventsAndRemapData();
 
         inline bool IsDeletedEvent(CalendarEventStore::const_iterator iter) { return iter->second.HasFlag(CALENDAR_STATE_FLAG_DELETED); }
         inline bool IsValidEvent(CalendarEventStore::const_iterator iter) { return iter != m_EventStore.end() && !IsDeletedEvent(iter); }

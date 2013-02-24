@@ -37,7 +37,7 @@
 #include "MapManager.h"
 #include "ObjectAccessor.h"
 #include "CellImpl.h"
-#include "Policies/SingletonImp.h"
+#include "Policies/Singleton.h"
 #include "SharedDefines.h"
 #include "LootMgr.h"
 #include "VMapFactory.h"
@@ -2235,6 +2235,10 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     case 41376:                                             // Spite
                     case 62166:                                             // Stone Grip nh
                     case 63981:                                             // Stone Grip h
+                    case 69674:                                             // Mutated Infection (ICC, Rotface)
+                    case 71224:                                             // Mutated Infection
+                    case 73022:                                             // Mutated Infection
+                    case 73023:                                             // Mutated Infection
                         if (Unit* pVictim = m_caster->getVictim())
                             targetUnitMap.remove(pVictim);
                         break;
@@ -2260,7 +2264,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             }
 
             UnitList tempTargetUnitMap;
-            SpellScriptTargetBounds bounds = sSpellMgr.GetSpellScriptTargetBounds(m_spellInfo->Id);
+            SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(m_spellInfo->Id);
 
             // fill real target list if no spell script target defined
             FillAreaTargets(bounds.first != bounds.second ? tempTargetUnitMap : targetUnitMap,
@@ -2273,22 +2277,22 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     if ((*iter)->GetTypeId() != TYPEID_UNIT)
                         continue;
 
-                    for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
+                    for (SQLMultiStorage::SQLMultiSIterator<SpellTargetEntry> i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                     {
-                        if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
+                        if (i_spellST->CanNotHitWithSpellEffect(effIndex))
                             continue;
 
                         // only creature entries supported for this target type
-                        if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
+                        if (i_spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT)
                             continue;
 
-                        if ((*iter)->GetEntry() == i_spellST->second.targetEntry)
+                        if ((*iter)->GetEntry() == i_spellST->targetEntry)
                         {
-                            if (i_spellST->second.type == SPELL_TARGET_TYPE_DEAD && ((Creature*)(*iter))->IsCorpse())
+                            if (i_spellST->type == SPELL_TARGET_TYPE_DEAD && ((Creature*)(*iter))->IsCorpse())
                             {
                                 targetUnitMap.push_back((*iter));
                             }
-                            else if (i_spellST->second.type == SPELL_TARGET_TYPE_CREATURE && (*iter)->isAlive())
+                            else if (i_spellST->type == SPELL_TARGET_TYPE_CREATURE && (*iter)->isAlive())
                             {
                                 targetUnitMap.push_back((*iter));
                             }
@@ -2436,7 +2440,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             }
 
             UnitList tempTargetUnitMap;
-            SpellScriptTargetBounds bounds = sSpellMgr.GetSpellScriptTargetBounds(m_spellInfo->Id);
+            SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(m_spellInfo->Id);
             // fill real target list if no spell script target defined
             FillAreaTargets(bounds.first != bounds.second ? tempTargetUnitMap : targetUnitMap, radius, PUSH_DEST_CENTER, SPELL_TARGETS_ALL);
 
@@ -2447,21 +2451,22 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     if ((*iter)->GetTypeId() != TYPEID_UNIT)
                         continue;
 
-                    for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
+                    for (SQLMultiStorage::SQLMultiSIterator<SpellTargetEntry> i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                     {
-                        if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
-                            continue;
-                        // only creature entries supported for this target type
-                        if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
+                        if (i_spellST->CanNotHitWithSpellEffect(effIndex))
                             continue;
 
-                        if ((*iter)->GetEntry() == i_spellST->second.targetEntry)
+                        // only creature entries supported for this target type
+                        if (i_spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT)
+                            continue;
+
+                        if ((*iter)->GetEntry() == i_spellST->targetEntry)
                         {
-                            if (i_spellST->second.type == SPELL_TARGET_TYPE_DEAD && ((Creature*)(*iter))->IsCorpse())
+                            if (i_spellST->type == SPELL_TARGET_TYPE_DEAD && ((Creature*)(*iter))->IsCorpse())
                             {
                                 targetUnitMap.push_back((*iter));
                             }
-                            else if (i_spellST->second.type == SPELL_TARGET_TYPE_CREATURE && (*iter)->isAlive())
+                            else if (i_spellST->type == SPELL_TARGET_TYPE_CREATURE && (*iter)->isAlive())
                             {
                                 targetUnitMap.push_back((*iter));
                             }
@@ -2508,22 +2513,20 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             // for some/most spells we clearly need/want to limit with spell_target_script
             // Some spells untested, for affected GO type 33. May need further adjustments for spells related.
 
-            SpellScriptTargetBounds bounds = sSpellMgr.GetSpellScriptTargetBounds(m_spellInfo->Id);
             std::list<GameObject*> tempTargetGOList;
-
             float fSearchDistance = GetSpellMaxRange(sSpellRangeStore.LookupEntry(m_spellInfo->rangeIndex));
-
+            SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(m_spellInfo->Id);
             if (bounds.first !=  bounds.second)
             {
-                for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
+                for (SQLMultiStorage::SQLMultiSIterator<SpellTargetEntry> i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                 {
-                    if (!i_spellST->second.CanHitWithSpellEffect(effIndex))
+                    if (i_spellST->CanNotHitWithSpellEffect(effIndex))
                         continue;
 
-                    if (i_spellST->second.type == SPELL_TARGET_TYPE_GAMEOBJECT)
+                    if (i_spellST->type == SPELL_TARGET_TYPE_GAMEOBJECT)
                     {
                         // search all GO's with entry, within range of m_destN
-                        MaNGOS::GameObjectEntryInPosRangeCheck go_check(*m_caster, i_spellST->second.targetEntry, x, y, z, radius);
+                        MaNGOS::GameObjectEntryInPosRangeCheck go_check(*m_caster, i_spellST->targetEntry, x, y, z, radius);
                         MaNGOS::GameObjectListSearcher<MaNGOS::GameObjectEntryInPosRangeCheck> checker(tempTargetGOList, go_check);
                         Cell::VisitGridObjects(m_caster, checker, radius + fSearchDistance);
                     }
@@ -2694,6 +2697,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     targetUnitMap.remove(m_caster);
                     break;
                 case 63881:                                 // Malady of the Mind   Ulduar Yogg Saron
+                case 70920:                                 // Unbound Plague Search Effect (ICC -Putricide)
                     FillAreaTargets(targetUnitMap, radius, PUSH_SELF_CENTER, SPELL_TARGETS_FRIENDLY, GetCastingObject());
                     targetUnitMap.remove(m_caster);
                     break;
@@ -4444,7 +4448,7 @@ void Spell::SendCastResult(Player* caster, SpellEntry const* spellInfo, uint8 ca
     WorldPacket data(isPetCastResult ? SMSG_PET_CAST_FAILED : SMSG_CAST_FAILED, (4 + 1 + 2));
     data << uint8(cast_count);                              // single cast or multi 2.3 (0/1)
     data << uint32(spellInfo->Id);
-    data << uint8(result);                                  // problem
+    data << uint8(!IsPassiveSpell(spellInfo) ? result : SPELL_FAILED_DONT_REPORT); // do not report failed passive spells
     switch (result)
     {
         case SPELL_FAILED_NOT_READY:
@@ -4680,7 +4684,7 @@ void Spell::SendSpellGo()
 
     m_caster->SendMessageToSet(&data, true);
 
-    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST,"Spell::SendSpellGo: %s cast spell %u on %s, targets count (mask %u) %u %u %u",
+    DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST,"Spell::SendSpellGo: %s cast spell %u on %s, targets count (mask %u) "SIZEFMTD" "SIZEFMTD" "SIZEFMTD,
                 m_caster->GetObjectGuid().GetString().c_str(),
                 m_spellInfo->Id,
                 m_targets.getUnitTarget() ? m_targets.getUnitTarget()->GetObjectGuid().GetString().c_str() : "<none>",
@@ -4993,7 +4997,7 @@ void Spell::SendChannelUpdate(uint32 time)
         }
         else if (m_spellInfo->HasAttribute(SPELL_ATTR_EX_FARSIGHT) && m_caster->GetTypeId() == TYPEID_PLAYER)
         {
-            if (DynamicObject* dynObj = m_caster->GetDynObject(m_triggeredByAuraSpell ? m_triggeredByAuraSpell->Id : m_spellInfo->Id))
+            if (/*DynamicObject* dynObj = */m_caster->GetDynObject(m_triggeredByAuraSpell ? m_triggeredByAuraSpell->Id : m_spellInfo->Id))
                 ((Player*)m_caster)->SetViewPoint(NULL);
         }
 
@@ -5936,7 +5940,7 @@ SpellCastResult Spell::CheckCast(bool strict)
                m_spellInfo->EffectImplicitTargetA[j] == TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT)
             {
 
-                SpellScriptTargetBounds bounds = sSpellMgr.GetSpellScriptTargetBounds(m_spellInfo->Id);
+                SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(m_spellInfo->Id);
 
                 if (bounds.first == bounds.second)
                 {
@@ -5957,20 +5961,20 @@ SpellCastResult Spell::CheckCast(bool strict)
                 Creature* creatureScriptTarget = NULL;
                 GameObject* goScriptTarget = NULL;
 
-                for(SpellScriptTarget::const_iterator i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
+                for (SQLMultiStorage::SQLMultiSIterator<SpellTargetEntry> i_spellST = bounds.first; i_spellST != bounds.second; ++i_spellST)
                 {
-                    if (!i_spellST->second.CanHitWithSpellEffect(SpellEffectIndex(j)))
+                    if (i_spellST->CanNotHitWithSpellEffect(SpellEffectIndex(j)))
                         continue;
 
-                    switch(i_spellST->second.type)
+                    switch (i_spellST->type)
                     {
                         case SPELL_TARGET_TYPE_GAMEOBJECT:
                         {
                             GameObject* p_GameObject = NULL;
 
-                            if (i_spellST->second.targetEntry)
+                            if (i_spellST->targetEntry)
                             {
-                                MaNGOS::NearestGameObjectEntryInObjectRangeCheck go_check(*m_caster, i_spellST->second.targetEntry, range);
+                                MaNGOS::NearestGameObjectEntryInObjectRangeCheck go_check(*m_caster, i_spellST->targetEntry, range);
                                 MaNGOS::GameObjectLastSearcher<MaNGOS::NearestGameObjectEntryInObjectRangeCheck> checker(p_GameObject, go_check);
                                 Cell::VisitGridObjects(m_caster, checker, range);
 
@@ -6003,15 +6007,15 @@ SpellCastResult Spell::CheckCast(bool strict)
                             // check if explicit target is provided and check it up against database valid target entry/state
                             if (Unit* pTarget = m_targets.getUnitTarget())
                             {
-                                if (pTarget->GetTypeId() == TYPEID_UNIT && pTarget->GetEntry() == i_spellST->second.targetEntry)
+                                if (pTarget->GetTypeId() == TYPEID_UNIT && pTarget->GetEntry() == i_spellST->targetEntry)
                                 {
-                                    if (i_spellST->second.type == SPELL_TARGET_TYPE_DEAD && ((Creature*)pTarget)->IsCorpse())
+                                    if (i_spellST->type == SPELL_TARGET_TYPE_DEAD && ((Creature*)pTarget)->IsCorpse())
                                     {
                                         // always use spellMaxRange, in case GetLastRange returned different in a previous pass
                                         if (pTarget->IsWithinDistInMap(m_caster, GetSpellMaxRange(srange)))
                                             targetExplicit = (Creature*)pTarget;
                                     }
-                                    else if (i_spellST->second.type == SPELL_TARGET_TYPE_CREATURE && pTarget->isAlive())
+                                    else if (i_spellST->type == SPELL_TARGET_TYPE_CREATURE && pTarget->isAlive())
                                     {
                                         // always use spellMaxRange, in case GetLastRange returned different in a previous pass
                                         if (pTarget->IsWithinDistInMap(m_caster, GetSpellMaxRange(srange)))
@@ -6023,7 +6027,7 @@ SpellCastResult Spell::CheckCast(bool strict)
                             // no target provided or it was not valid, so use closest in range
                             if (!targetExplicit)
                             {
-                                MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck u_check(*m_caster, i_spellST->second.targetEntry, i_spellST->second.type != SPELL_TARGET_TYPE_DEAD, i_spellST->second.type == SPELL_TARGET_TYPE_DEAD, range);
+                                MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck u_check(*m_caster, i_spellST->targetEntry, i_spellST->type != SPELL_TARGET_TYPE_DEAD, i_spellST->type == SPELL_TARGET_TYPE_DEAD, range);
                                 MaNGOS::CreatureLastSearcher<MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck> searcher(p_Creature, u_check);
 
                                 // Visit all, need to find also Pet* objects

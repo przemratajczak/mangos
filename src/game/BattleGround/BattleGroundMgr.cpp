@@ -45,7 +45,7 @@
 #include "Formulas.h"
 #include "WorldObjectEvents.h"
 
-#include "Policies/SingletonImp.h"
+#include "Policies/Singleton.h"
 
 INSTANTIATE_SINGLETON_1(BattleGroundMgr);
 
@@ -1226,7 +1226,10 @@ void BattleGroundMgr::BuildPvpLogDataPacket(WorldPacket* data, BattleGround* bg)
     else
     {
         *data << uint8(1);                                  // bg ended
-        *data << uint8(bg->GetWinner());                    // who win
+        Team team = bg->GetWinner();
+        uint8 uWinner = team == ALLIANCE ? 1
+                      : team == HORDE ? 0 : 2;
+        *data << uint8(uWinner);                            // who win
     }
 
     *data << (int32)(bg->GetPlayerScoresSize());

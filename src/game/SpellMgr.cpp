@@ -1019,6 +1019,13 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                     }
                     break;
                 }
+                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
+                {
+                    if (spellproto->CalculateSimpleValue(effIndex) < 0)
+                        return true;
+                    else
+                        return false;
+                }
                 case SPELL_EFFECT_FORCE_CAST:   // positive in all cases?
                     return true;
                 default:
@@ -2590,6 +2597,10 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 55479:                                 // Forced Obedience (Naxxramas, Razovius)
                 case 56140:                                 // Summon Power Spark (Eye of Eternity, Malygos)
                 case 59870:                                 // Glare of the Tribunal (h) (Halls of Stone)
+                case 62978:                                 // Summon Guardian (Ulduar - Yogg Saron)
+                case 63713:                                 // Dominate Mind (Ulduar - Yogg Saron)
+                case 63830:                                 // Malady of the Mind (Ulduar - Yogg Saron)
+                case 64465:                                 // Shadow Beacon (Ulduar - Yogg Saron)
                 case 62016:                                 // Charge Orb (Ulduar, Thorim)
                 case 62042:                                 // Stormhammer (Ulduar, Thorim)
                 case 62166:                                 // StoneGrip nh
@@ -2608,6 +2619,8 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 64234:                                 // Gravity Bomb (h) (Ulduar, XT-002)
                 case 64425:                                 // Summon Scrap Bot Trigger (Ulduar, Mimiron) use for Assault Bots, hits npc 33856
                 case 64531:                                 // Rapid Burst (h)
+                case 64562:                                 // Summon Flames Spread Trigger (Ulduar, Mimiron)
+                case 64623:                                 // Frost Bomb (Ulduar, Mimiron)
                 case 65121:                                 // Searing Light (h)
                 case 65301:                                 // Psychosis (Ulduar, Yogg-Saron)
                 case 65872:                                 // Pursuing Spikes
@@ -2735,6 +2748,24 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 63482:                                 // Lightning Whirl (h) (Ulduar, Stormcaller Brundir)
                     unMaxTargets = urand(3, 6);
                     break;
+                case 74452:                                 // Conflagration (Saviana, Ruby Sanctum) (hack, in 25 mode spell simple casted double time)
+                {
+                    if (caster)
+                    {
+                        switch (caster->GetMap()->GetDifficulty())
+                        {
+                            case RAID_DIFFICULTY_10MAN_NORMAL:
+                            case RAID_DIFFICULTY_10MAN_HEROIC:
+                                unMaxTargets = 3;
+                                break;
+                            case RAID_DIFFICULTY_25MAN_NORMAL:
+                            case RAID_DIFFICULTY_25MAN_HEROIC:
+                                unMaxTargets = 6;
+                                break;
+                        }
+                    }
+                    break;
+                }
                 default:
                     break;
             }
@@ -2788,6 +2819,10 @@ float SpellMgr::GetSpellRadiusWithCustom(SpellEntry const* spellInfo, Unit const
         {
             switch(spellInfo->Id)
             {
+                case 71160:                                 // Plague Stench
+                case 71161:
+                    radius = 30;
+                    break;
                 case 67732:                                 // Destroy all Frost Patches (Trial of the Crusader, Anub'arak)
                     radius = 9.0f;
                     break;
@@ -2804,6 +2839,7 @@ float SpellMgr::GetSpellRadiusWithCustom(SpellEntry const* spellInfo, Unit const
                 case 71518:                                 // Unholy infusion credit
                 case 72289:                                 // Frost infusion credit
                 case 72706:                                 // Valithria event credit
+                case 72254:                                 // Mark of the fallen Champion Search Spell
                 case 72769:                                 // Scent of Blood (Saurfang)
                 case 72771:
                 case 72934:                                 // Blood infusion credit
@@ -2845,6 +2881,14 @@ float SpellMgr::GetSpellRadiusWithCustom(SpellEntry const* spellInfo, Unit const
                     break;
                 case 56438:                                 // Arcane Overload
                     radius = radius * caster->GetObjectScale();
+                    break;
+                case 70346:                                 // Slime Puddle (ICC - Professor Putricide)
+                case 72456:
+                case 72868:
+                case 72869:
+                    radius = 5.0f;
+                    if (SpellAuraHolderPtr holder = caster->GetSpellAuraHolder(70347))
+                        radius += holder->GetStackAmount() * 0.2f;
                     break;
                 default:
                     break;
@@ -3574,40 +3618,16 @@ void SpellMgr::LoadSpellLearnSpells()
 
 void SpellMgr::LoadSpellScriptTarget()
 {
-    mSpellScriptTarget.clear();                             // need for reload case
+    sSpellScriptTargetStorage.Load();
 
-    uint32 count = 0;
-
-    QueryResult *result = WorldDatabase.Query("SELECT entry,type,targetEntry,invertEffectMask FROM spell_script_target");
-
-    if (!result)
+    // Check content
+    for (SQLMultiStorage::SQLSIterator<SpellTargetEntry> itr = sSpellScriptTargetStorage.getDataBegin<SpellTargetEntry>(); itr < sSpellScriptTargetStorage.getDataEnd<SpellTargetEntry>(); ++itr)
     {
-        BarGoLink bar(1);
-
-        bar.step();
-
-        sLog.outString();
-        sLog.outErrorDb(">> Loaded 0 SpellScriptTarget. DB table `spell_script_target` is empty.");
-        return;
-    }
-
-    BarGoLink bar(result->GetRowCount());
-
-    do
-    {
-        Field *fields = result->Fetch();
-        bar.step();
-
-        uint32 spellId     = fields[0].GetUInt32();
-        uint32 type        = fields[1].GetUInt32();
-        uint32 targetEntry = fields[2].GetUInt32();
-        uint32 invertEffectMask = fields[3].GetUInt32();
-
-        SpellEntry const* spellProto = sSpellStore.LookupEntry(spellId);
-
+        SpellEntry const* spellProto = sSpellStore.LookupEntry(itr->spellId);
         if (!spellProto)
         {
-            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not exist.",spellId,targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not exist.", itr->spellId, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
@@ -3635,87 +3655,84 @@ void SpellMgr::LoadSpellScriptTarget()
         }
         if (!targetfound)
         {
-            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not have any implicit target TARGET_SCRIPT(38) or TARGET_SCRIPT_COORDINATES (46) or TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT (40).", spellId, targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: spellId %u listed for TargetEntry %u does not have any implicit target TARGET_SCRIPT(38) or TARGET_SCRIPT_COORDINATES (46) or TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT (40).", itr->spellId, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
-        if (type >= MAX_SPELL_TARGET_TYPE)
+        if (itr->type >= MAX_SPELL_TARGET_TYPE)
         {
-            sLog.outErrorDb("Table `spell_script_target`: target type %u for TargetEntry %u is incorrect.",type,targetEntry);
+            sLog.outErrorDb("Table `spell_script_target`: target type %u for TargetEntry %u is incorrect.", itr->type, itr->targetEntry);
+            sSpellScriptTargetStorage.EraseEntry(itr->spellId);
             continue;
         }
 
         // Checks by target type
-        switch (type)
+        switch (itr->type)
         {
             case SPELL_TARGET_TYPE_GAMEOBJECT:
             {
-                if (!targetEntry)
+                if (!itr->targetEntry)
                     break;
 
-                if (!sGOStorage.LookupEntry<GameObjectInfo>(targetEntry))
+                if (!sGOStorage.LookupEntry<GameObjectInfo>(itr->targetEntry))
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: gameobject template entry %u does not exist.",targetEntry);
+                    sLog.outErrorDb("Table `spell_script_target`: gameobject template entry %u does not exist.", itr->targetEntry);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
                 break;
             }
             default:
-                if (!targetEntry)
+                if (!itr->targetEntry)
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: target entry == 0 for not GO target type (%u).",type);
+                    sLog.outErrorDb("Table `spell_script_target`: target entry == 0 for not GO target type (%u).", itr->type);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
-                if (const CreatureInfo* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(targetEntry))
+                if (const CreatureInfo* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(itr->targetEntry))
                 {
-                    if (spellId == 30427 && !cInfo->SkinLootId)
+                    if (itr->spellId == 30427 && !cInfo->SkinLootId)
                     {
                         sLog.outErrorDb("Table `spell_script_target` has creature %u as a target of spellid 30427, but this creature has no skinlootid. Gas extraction will not work!", cInfo->Entry);
+                        sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                         continue;
                     }
                 }
                 else
                 {
-                    sLog.outErrorDb("Table `spell_script_target`: creature template entry %u does not exist.",targetEntry);
+                    sLog.outErrorDb("Table `spell_script_target`: creature template entry %u does not exist.", itr->targetEntry);
+                    sSpellScriptTargetStorage.EraseEntry(itr->spellId);
                     continue;
                 }
                 break;
         }
-
-        mSpellScriptTarget.insert(SpellScriptTarget::value_type(spellId,SpellTargetEntry(SpellTargetType(type),targetEntry, invertEffectMask)));
-
-        ++count;
-    } while (result->NextRow());
-
-    delete result;
+    }
 
     // Check all spells
-    /* Disabled (lot errors at this moment)
-    for(uint32 i = 1; i < sSpellStore.nCount; ++i)
+    if (!sLog.HasLogFilter(LOG_FILTER_DB_STRICTED_CHECK))
     {
-        SpellEntry const * spellInfo = sSpellStore.LookupEntry(i);
-        if(!spellInfo)
-            continue;
-
-        bool found = false;
-        for(int j = 0; j < MAX_EFFECT_INDEX; ++j)
+        for (uint32 i = 1; i < sSpellStore.GetFieldCount(); ++i)
         {
-            if ( spellInfo->EffectImplicitTargetA[j] == TARGET_SCRIPT || spellInfo->EffectImplicitTargetA[j] != TARGET_SELF && spellInfo->EffectImplicitTargetB[j] == TARGET_SCRIPT )
+            SpellEntry const* spellInfo = sSpellStore.LookupEntry(i);
+            if(!spellInfo)
+                continue;
+
+            bool found = false;
+            for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
             {
-                SpellScriptTarget::const_iterator lower = GetBeginSpellScriptTarget(spellInfo->Id);
-                SpellScriptTarget::const_iterator upper = GetEndSpellScriptTarget(spellInfo->Id);
-                if (lower==upper)
+                if (spellInfo->EffectImplicitTargetA[j] == TARGET_SCRIPT || spellInfo->EffectImplicitTargetA[j] != TARGET_SELF && spellInfo->EffectImplicitTargetB[j] == TARGET_SCRIPT)
                 {
-                    sLog.outErrorDb("Spell (ID: %u) has effect EffectImplicitTargetA/EffectImplicitTargetB = %u (TARGET_SCRIPT), but does not have record in `spell_script_target`",spellInfo->Id,TARGET_SCRIPT);
-                    break;                                  // effects of spell
+                    SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry> bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(i);
+                    if (bounds.first == bounds.second)
+                    {
+                        sLog.outErrorDb("Spell (ID: %u) has effect EffectImplicitTargetA/EffectImplicitTargetB = %u (TARGET_SCRIPT), but does not have record in `spell_script_target`", spellInfo->Id, TARGET_SCRIPT);
+                        break;                                  // effects of spell
+                    }
                 }
             }
         }
     }
-    */
-
-    sLog.outString();
-    sLog.outString(">> Loaded %u Spell Script Targets", count);
 }
 
 void SpellMgr::LoadSpellPetAuras()

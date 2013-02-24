@@ -81,7 +81,7 @@ Map::Map(uint32 id, time_t expiry, uint32 InstanceId, uint8 SpawnMode)
   m_VisibleDistance(DEFAULT_VISIBILITY_DISTANCE),
   m_activeNonPlayersIter(m_activeNonPlayers.end()),
   i_gridExpiry(expiry), m_TerrainData(sTerrainMgr.LoadTerrain(id)),
-  i_data(NULL), i_script_id(0)
+  i_data(NULL), i_script_id(0), m_Unloading(false)
 {
     m_CreatureGuids.Set(sObjectMgr.GetFirstTemporaryCreatureLowGuid());
     m_GameObjectGuids.Set(sObjectMgr.GetFirstTemporaryGameObjectLowGuid());
@@ -861,7 +861,6 @@ void Map::Relocation(GameObject* go, float x, float y, float z, float orientatio
 
     Cell old_cell(old_val);
     Cell new_cell(new_val);
-    bool same_cell = (new_cell == old_cell);
 
     go->Relocate(x, y, z, orientation);
 
@@ -991,6 +990,8 @@ bool Map::UnloadGrid(const uint32 &x, const uint32 &y, bool pForce)
 
 void Map::UnloadAll(bool pForce)
 {
+    SetIsInUnloading();
+
     while (!IsLoadingObjectsQueueEmpty())
     {
         if (LoadingObjectQueueMember* member = GetNextLoadingObject())

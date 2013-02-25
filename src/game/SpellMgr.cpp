@@ -1019,13 +1019,6 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                     }
                     break;
                 }
-                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
-                {
-                    if (spellproto->CalculateSimpleValue(effIndex) < 0)
-                        return true;
-                    else
-                        return false;
-                }
                 case SPELL_EFFECT_FORCE_CAST:   // positive in all cases?
                     return true;
                 default:

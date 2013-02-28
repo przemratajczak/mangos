@@ -936,8 +936,11 @@ void Spell::AddUnitTarget(Unit* pVictim, SpellEffectIndex effIndex)
     target.effectMask = immuned ? 0 : (1 << effIndex);      // Store index of effect if not immuned
     target.processed  = false;                              // Effects not applied on target
 
-    // Calculate hit result
-    target.missCondition = m_caster->SpellHitResult(pVictim, m_spellInfo);
+    // Calculate hit result, ommit calculation for positive effects
+    if (IsPositiveEffect(m_spellInfo, effIndex) && pVictim->IsFriendlyTo(m_caster))
+        target.missCondition = SPELL_MISS_NONE;
+    else
+        target.missCondition = m_caster->SpellHitResult(pVictim, m_spellInfo);
 
     // spell fly from visual cast object
     WorldObject* affectiveObject = GetAffectiveCasterObject();

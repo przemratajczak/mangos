@@ -1597,6 +1597,51 @@ bool ChatHandler::HandleModifyRepCommand(char* args)
 }
 
 //-----------------------Npc Commands-----------------------
+bool ChatHandler::HandleNpcNearCommand(char* args)
+{
+    float distance;
+    if (!ExtractOptFloat(&args, distance, 10.0f))
+        return false;
+
+    uint32 count = 0;
+
+    Player* pl = m_session->GetPlayer();
+    QueryResult* result = WorldDatabase.PQuery("SELECT guid, id, position_x, position_y, position_z, map, "
+                          "(POW(position_x - '%f', 2) + POW(position_y - '%f', 2) + POW(position_z - '%f', 2)) AS order_ "
+                          "FROM creature WHERE map='%u' AND (POW(position_x - '%f', 2) + POW(position_y - '%f', 2) + POW(position_z - '%f', 2)) <= '%f' ORDER BY order_",
+                          pl->GetPositionX(), pl->GetPositionY(), pl->GetPositionZ(),
+                          pl->GetMapId(), pl->GetPositionX(), pl->GetPositionY(), pl->GetPositionZ(), distance * distance);
+
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 guid = fields[0].GetUInt32();
+            uint32 entry = fields[1].GetUInt32();
+            float x = fields[2].GetFloat();
+            float y = fields[3].GetFloat();
+            float z = fields[4].GetFloat();
+            int mapid = fields[5].GetUInt16();
+
+            CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(entry);
+
+            if (!cInfo)
+                continue;
+
+            PSendSysMessage(LANG_GO_MIXED_LIST_CHAT, guid, PrepareStringNpcOrGoSpawnInformation<Creature>(guid).c_str(), entry, guid, cInfo->Name, x, y, z, mapid);
+
+            ++count;
+        }
+        while (result->NextRow());
+
+        delete result;
+    }
+
+    PSendSysMessage(LANG_COMMAND_NEAROBJMESSAGE, distance, count);
+    return true;
+}
+
 // add spawn of creature
 bool ChatHandler::HandleNpcAddCommand(char* args)
 {

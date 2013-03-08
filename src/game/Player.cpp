@@ -6387,7 +6387,10 @@ void Player::CheckAreaExploreAndOutdoor()
         }
     }
     else if (sWorld.getConfig(CONFIG_BOOL_VMAP_INDOOR_CHECK) && !isGameMaster())
-        RemoveAurasWithAttribute(SPELL_ATTR_OUTDOORS_ONLY);
+        RemoveAurasWithAttribute(SPELL_ATTR_OUTDOORS_ONLY, SPELL_ATTR_PASSIVE);
+
+    if (sWorld.getConfig(CONFIG_BOOL_VMAP_INDOOR_CHECK))
+        TriggerPassiveAurasWithAttribute(isOutdoor, SPELL_ATTR_OUTDOORS_ONLY);
 
     if (areaFlag==0xffff)
         return;
@@ -13224,14 +13227,17 @@ void Player::PrepareGossipMenu(WorldObject* pSource, uint32 menuId)
     for (GossipMenuItemsMap::const_iterator itr = pMenuItemBounds.first; itr != pMenuItemBounds.second; ++itr)
     {
         bool hasMenuItem = true;
+        bool isGMSkipConditionCheck = false;
 
-        if (!isGameMaster())                                // Let GM always see menu items regardless of conditions
+        if (itr->second.conditionId && !sObjectMgr.IsPlayerMeetToCondition(itr->second.conditionId, this, GetMap(), pSource, CONDITION_FROM_GOSSIP_OPTION))
         {
-            if (itr->second.conditionId && !sObjectMgr.IsPlayerMeetToCondition(itr->second.conditionId, this, GetMap(), pSource, CONDITION_FROM_GOSSIP_OPTION))
+            if (isGameMaster())                             // Let GM always see menu items regardless of conditions
+                isGMSkipConditionCheck = true;
+            else
             {
                 if (itr->second.option_id == GOSSIP_OPTION_QUESTGIVER)
                     canSeeQuests = false;
-                continue;
+                continue;                                   // Skip this option
             }
         }
 
@@ -13357,6 +13363,13 @@ void Player::PrepareGossipMenu(WorldObject* pSource, uint32 menuId)
                     if (no->BoxText.size() > (size_t)loc_idx && !no->BoxText[loc_idx].empty())
                         strBoxText = no->BoxText[loc_idx];
                 }
+            }
+
+            if (isGMSkipConditionCheck)
+            {
+                strOptionText.append(" (");
+                strOptionText.append(GetSession()->GetMangosString(LANG_GM_ON));
+                strOptionText.append(")");
             }
 
             pMenu->GetGossipMenu().AddMenuItem(itr->second.option_icon, strOptionText, 0, itr->second.option_id, strBoxText, itr->second.box_money, itr->second.box_coded);

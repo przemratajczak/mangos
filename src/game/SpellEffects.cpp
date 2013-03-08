@@ -2004,11 +2004,14 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                 }
                 case 42631:                                 // Fire Bomb (explode)
                 {
-                    if (!unitTarget)
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT)
                         return;
 
                     unitTarget->RemoveAurasDueToSpell(42629);
                     unitTarget->CastSpell(unitTarget, 42630, true);
+
+                    // despawn the bomb after exploding
+                    ((Creature*)unitTarget)->ForcedDespawn(3000);
                     return;
                 }
                 case 42793:                                 // Burn Body
@@ -3758,6 +3761,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                         return;
 
                     m_caster->CastSpell(unitTarget, 74453, true);
+                    m_caster->CastSpell(unitTarget, 74454, true, NULL, NULL, m_caster->GetObjectGuid(), m_spellInfo);
                     return;
                 }
                 default:
@@ -9370,13 +9374,26 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     caster->RemoveSpellCategoryCooldown(82, true);
                     return;
                 }
-                case 50810:                                 // Shatter (Krystallus)
-                case 61546:                                 // Shatter (h) (Krystallus)
+                case 50742:                                 // Ooze Combine
                 {
-                    if (!unitTarget)
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT)
                         return;
 
-                    unitTarget->CastSpell(unitTarget, m_spellInfo->Id + 1, true, NULL, NULL, m_caster->GetObjectGuid());
+                    m_caster->CastSpell(unitTarget, 50747, true);
+                    ((Creature*)m_caster)->ForcedDespawn();
+                    return;
+                }
+                case 50810:                                 // Shatter
+                case 61546:                                 // Shatter (h)
+                {
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    if (!unitTarget->HasAura(50812))
+                        return;
+
+                    unitTarget->RemoveAurasDueToSpell(50812);
+                    unitTarget->CastSpell(unitTarget, m_spellInfo->Id == 50810 ? 50811 : 61547 , true, NULL, NULL, m_caster->GetObjectGuid());
                     return;
                 }
                 case 50894:                                 // Zul'Drak Rat

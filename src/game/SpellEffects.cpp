@@ -2036,14 +2036,15 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     return;
                 }
                 case 43014:                                  // Despawn Self
-                {                                           // used by ACID event to run away and despawn
+                {                                            // used by ACID event to run away and despawn
                     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT)
                         return;
 
                     ((Creature*)unitTarget)->ForcedDespawn(2000);
                     float x, y, z;
-                    unitTarget->GetClosePoint(x, y, z, unitTarget->GetObjectBoundingRadius(), 10.0f, unitTarget->GetOrientation());
-                    unitTarget->MonsterMoveWithSpeed(x, y, z, unitTarget->GetSpeedRate(MOVE_RUN));
+                    unitTarget->GetClosePoint(x, y, z, unitTarget->GetObjectBoundingRadius(), 20.0f, unitTarget->GetOrientation());
+                    unitTarget->SetStandState(UNIT_STAND_STATE_STAND);
+                    unitTarget->MonsterMoveWithSpeed(x, y, z, unitTarget->GetSpeed(MOVE_WALK));
                     return;
                 }
                 case 43036:                                 // Dismembering Corpse

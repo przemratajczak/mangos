@@ -2043,7 +2043,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     ((Creature*)unitTarget)->ForcedDespawn(2000);
                     float x, y, z;
                     unitTarget->GetClosePoint(x, y, z, unitTarget->GetObjectBoundingRadius(), 10.0f, unitTarget->GetOrientation());
-                    unitTarget->MonsterMoveWithSpeed(x, y, z, 28);
+                    unitTarget->MonsterMoveWithSpeed(x, y, z, unitTarget->GetSpeedRate(MOVE_RUN));
                     return;
                 }
                 case 43036:                                 // Dismembering Corpse

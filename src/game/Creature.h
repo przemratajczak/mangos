@@ -421,17 +421,21 @@ struct CreatureCreatePos
     public:
         // exactly coordinates used
         CreatureCreatePos(Map* map, float x, float y, float z, float o, uint32 phaseMask)
-            : m_pos(x, y, z, o, map->GetId(), map->GetInstanceId(), 0), m_map(map),
+            : m_pos(map->GetId(), x, y, z, o, phaseMask, map->GetInstanceId()), m_map(map),
                 m_closeObject(NULL), m_angle(0.0f), m_dist(0.0f)
             {
-                m_pos.SetPhaseMask(phaseMask);
             }
         // if dist == 0.0f -> exactly object coordinates used, in other case close point to object (CONTACT_DIST can be used as minimal distances)
         CreatureCreatePos(WorldObject* closeObject, float ori, float dist = 0.0f, float angle = 0.0f)
-            : m_pos(*closeObject), m_map(closeObject->GetMap()), m_closeObject(closeObject),
+            : m_pos(closeObject->GetPosition()), m_map(closeObject->GetMap()), m_closeObject(closeObject),
                 m_angle(angle), m_dist(dist)
             {
                 m_pos.o = ori;
+            }
+        // Constructor for use with casttarget
+        CreatureCreatePos(Map* map, WorldLocation const& loc)
+            : m_map(map), m_pos(loc), m_closeObject(NULL), m_angle(0.0f), m_dist(0.0f)
+            {
             }
     public:
         Map* GetMap() const { return m_map; }
@@ -499,6 +503,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         void SetRespawnCoord(CreatureCreatePos const& pos) { m_respawnPos = pos.m_pos; }
         void ResetRespawnCoord();
         WorldLocation const& GetRespawnCoord() const { return m_respawnPos; };
+        void SetRespawnCoord(WorldLocation const& loc) { m_respawnPos = loc; }
 
         uint32 GetEquipmentId() const { return m_equipmentId; }
 

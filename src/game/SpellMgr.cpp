@@ -1223,7 +1223,7 @@ void SpellMgr::LoadSpellTargetPositions()
             continue;
         }
 
-        if (fabs(st.x) < M_NULL_F && fabs(st.y) < M_NULL_F && fabs(st.z) < M_NULL_F)
+        if (st.IsEmpty())
         {
             sLog.outErrorDb("Spell (ID:%u) target coordinates not provided.",Spell_ID);
             continue;
@@ -1239,11 +1239,14 @@ void SpellMgr::LoadSpellTargetPositions()
         bool found = false;
         for(int i = 0; i < MAX_EFFECT_INDEX; ++i)
         {
-            if (spellInfo->EffectImplicitTargetA[i] == TARGET_TABLE_X_Y_Z_COORDINATES || spellInfo->EffectImplicitTargetB[i] == TARGET_TABLE_X_Y_Z_COORDINATES ||
+            if (spellInfo->EffectImplicitTargetA[i] == TARGET_TABLE_X_Y_Z_COORDINATES || 
+                spellInfo->EffectImplicitTargetB[i] == TARGET_TABLE_X_Y_Z_COORDINATES ||
+                spellInfo->EffectImplicitTargetA[i] == TARGET_SCRIPT_COORDINATES || 
+                spellInfo->EffectImplicitTargetB[i] == TARGET_SCRIPT_COORDINATES ||
                 spellInfo->EffectImplicitTargetB[i] == TARGET_SELF2)
             {
                 // additional requirements
-                if (spellInfo->Effect[i]==SPELL_EFFECT_BIND && spellInfo->EffectMiscValue[i])
+                if (spellInfo->Effect[i] == SPELL_EFFECT_BIND && spellInfo->EffectMiscValue[i])
                 {
                     uint32 zone_id = st.GetZoneId();
                     if (int32(zone_id) != spellInfo->EffectMiscValue[i])
@@ -2222,34 +2225,34 @@ bool SpellMgr::canStackSpellRanksInSpellBook(SpellEntry const *spellInfo) const
 
 bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) const
 {
-    SpellEntry const *spellInfo_1 = sSpellStore.LookupEntry(spellId_1);
-    SpellEntry const *spellInfo_2 = sSpellStore.LookupEntry(spellId_2);
+    if (spellId_1 == spellId_2)
+        return false;
+
+    SpellEntry const* spellInfo_1 = sSpellStore.LookupEntry(spellId_1);
+    SpellEntry const* spellInfo_2 = sSpellStore.LookupEntry(spellId_2);
 
     if (!spellInfo_1 || !spellInfo_2)
         return false;
 
-    if(spellId_1 == spellId_2)
-        return false;
+    #define MatchedSpellIdPair(Id_1, Id_2) ((spellInfo_1->Id == Id_1 && spellInfo_2->Id == Id_2) || (spellInfo_1->Id == Id_2 && spellInfo_2->Id == Id_1))
+    #define MatchedIconIdPair(Id_1, Id_2) ((spellInfo_1->SpellIconID == Id_1 && spellInfo_2->SpellIconID == Id_2) || (spellInfo_1->SpellIconID == Id_2 && spellInfo_2->SpellIconID == Id_1))
 
     // Specific spell family spells
     // also some SpellIconID exceptions related to late checks (isModifier)
-    switch(spellInfo_1->SpellFamilyName)
+    switch (spellInfo_1->SpellFamilyName)
     {
         case SPELLFAMILY_GENERIC:
         {
             // BG_WS_SPELL_FOCUSED_ASSAULT & BG_WS_SPELL_BRUTAL_ASSAULT
-            if ((spellInfo_1->Id == 46392 && spellInfo_2->Id == 46393) ||
-                (spellInfo_1->Id == 46393 && spellInfo_2->Id == 46392))
+            if (MatchedSpellIdPair(46392, 46393))
                 return true;
 
             // Dark Essence & Light Essence
-            if ((spellInfo_1->Id == 65684 && spellInfo_2->Id == 65686) ||
-                (spellInfo_2->Id == 65684 && spellInfo_1->Id == 65686))
+            if (MatchedSpellIdPair(65684, 65686))
                 return true;
 
-            //Potent Fungus and Mini must remove each other (Amanitar encounter, Ahn'kahet)
-            if ((spellInfo_1->Id == 57055 && spellInfo_2->Id == 56648) ||
-                (spellInfo_2->Id == 57055 && spellInfo_1->Id == 56648))
+            // Potent Fungus and Mini must remove each other (Amanitar encounter, Ahn'kahet)
+            if (MatchedSpellIdPair(57055, 56648))
                 return true;
 
             // Mirrored Soul (FoS - Devourer) - and other Boss spells
@@ -2262,17 +2265,15 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
                 if (spellInfo_2->GetSpellFamilyFlags().test<CF_PALADIN_BLESSING_OF_KINGS>())
                     return true;
             }
-
             break;
         }
         case SPELLFAMILY_WARLOCK:
             if (spellInfo_2->SpellFamilyName == SPELLFAMILY_WARLOCK)
             {
-                //Corruption & Seed of corruption
-                if ((spellInfo_1->SpellIconID == 313 && spellInfo_2->SpellIconID == 1932) ||
-                    (spellInfo_2->SpellIconID == 313 && spellInfo_1->SpellIconID == 1932))
+                // Corruption & Seed of corruption
+                if (MatchedIconIdPair(313, 1932))
                 {
-                    if(spellInfo_1->SpellVisual[0] != 0 && spellInfo_2->SpellVisual[0] != 0)
+                    if (spellInfo_1->SpellVisual[0] != 0 && spellInfo_2->SpellVisual[0] != 0)
                         return true;                        // can't be stacked
                 }
             }
@@ -2318,8 +2319,7 @@ bool SpellMgr::IsNoStackSpellDueToSpell(uint32 spellId_1, uint32 spellId_2) cons
             if (spellInfo_2->SpellFamilyName == SPELLFAMILY_DEATHKNIGHT)
             {
                 // Crypt Fever and Ebon Plague
-                if((spellInfo_1->SpellIconID == 264 && spellInfo_2->SpellIconID == 1933) ||
-                   (spellInfo_2->SpellIconID == 264 && spellInfo_1->SpellIconID == 1933))
+                if (MatchedIconIdPair(264, 1933))
                     return true;
             }
             break;
@@ -2642,25 +2642,39 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 73144:
                 case 69140:                                 // Coldflame (ICC, Marrowgar)
                 case 69674:                                 // Mutated Infection (ICC, Rotface)
+                case 71224:                                 // Mutated Infection
+                case 73022:                                 // Mutated Infection
+                case 73023:                                 // Mutated Infection
+                case 70447:                                 // Volatile Ooze Adhesive (ICC -Putricide)
+                case 72836:
+                case 72837:
+                case 72838:
                 case 70450:                                 // Blood Mirror
                 case 70837:                                 // Blood Mirror
+                case 70672:                                 // Gaseous Bloat (ICC, Professor Putricide)
+                case 72455:
+                case 72832:
+                case 72833:
                 case 70882:                                 // Slime Spray Summon Trigger (ICC, Rotface)
+                case 70911:                                 // Unbound Plague (ICC, Putricide)
+                case 72854:
+                case 72855:
+                case 72856:
                 case 70920:                                 // Unbound Plague Search Effect (ICC, Putricide)
-                case 71224:                                 // Mutated Infection (Mode 1)
                 case 71445:                                 // Twilight Bloodbolt
                 case 71471:                                 // Twilight Bloodbolt
                 case 71837:                                 // Vampiric Bite
                 case 71861:                                 // Swarming Shadows
                 case 72091:                                 // Frozen Orb (Vault of Archavon, Toravon)
                 case 72254:                                 // Mark of the fallen Champion Search Spell
+                case 72295:                                 // Malleable Goo (ICC -Professor Putricide)
+                case 74280:
                 case 72378:                                 // Blood Nova (Saurfang)
                 case 73058:
                 case 72385:                                 // Boiling Blood
                 case 72441:
                 case 72442:
                 case 72443:
-                case 73022:                                 // Mutated Infection (Mode 2)
-                case 73023:                                 // Mutated Infection (Mode 3)
                     unMaxTargets = 1;
                     break;
                 case 28542:                                 // Life Drain
@@ -2673,6 +2687,9 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 69055:                                 // Bone Slice (ICC, Lord Marrowgar)
                 case 69278:                                 // Gas spore (ICC, Festergut)
                 case 70341:                                 // Slime Puddle (ICC, Putricide)
+                case 71424:                                 // Slime Puddle (ICC, Putricide) Search Spell
+                case 72615:                                 // Malleable Goo (ICC -Professor Putricide)
+                case 74281:
                     unMaxTargets = 2;
                     break;
                 case 28796:                                 // Poison Bolt Volley

@@ -1874,7 +1874,7 @@ bool Player::TeleportTo(WorldLocation const& loc, uint32 options)
         if (!GetSession()->PlayerLogout())
         {
             WorldPacket data;
-            BuildTeleportAckMsg(data, loc.coord_x, loc.coord_y, loc.coord_z, loc.orientation);
+            BuildTeleportAckMsg(data, loc.getX(), loc.getY(), loc.getZ(), loc.orientation);
             GetSession()->SendPacket(&data);
         }
     }
@@ -21961,22 +21961,26 @@ void Player::UpdateUnderwaterState(Map* m, float x, float y, float z)
 
             if (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER))
             {
-                if (SpellEntry const *pSpellEntry = sSpellStore.LookupEntry(liquidSpellId))
+                if (SpellEntry const* pSpellEntry = sSpellStore.LookupEntry(liquidSpellId))
                 {
                     // check aura for no double cast (FIXME! seems as big hack...)
-                    if (!HasAura(liquid->SpellId))
+                    if (!HasAura(liquidSpellId))
                     {
-                        if (InstanceData* pInst = GetInstanceData())
+                        // Handle exception for SSC water
+                        if (liquid->SpellId == 37025)
                         {
-                            if (pInst->CheckConditionCriteriaMeet(this, INSTANCE_CONDITION_ID_LURKER, NULL, CONDITION_FROM_HARDCODED))
+                            if (InstanceData* pInst = GetInstanceData())
                             {
-                                if (pInst->CheckConditionCriteriaMeet(this, INSTANCE_CONDITION_ID_SCALDING_WATER, NULL, CONDITION_FROM_HARDCODED))
-                                    CastSpell(this, liquidSpellId, true);
-                                else
+                                if (pInst->CheckConditionCriteriaMeet(this, INSTANCE_CONDITION_ID_LURKER, NULL, CONDITION_FROM_HARDCODED))
                                 {
-                                    SummonCreature(21508, 0, 0, 0, 0, TEMPSUMMON_TIMED_OOC_DESPAWN, 2000);
-                                    // Special update timer for the SSC water
-                                    m_positionStatusUpdateTimer = 2000;
+                                    if (pInst->CheckConditionCriteriaMeet(this, INSTANCE_CONDITION_ID_SCALDING_WATER, NULL, CONDITION_FROM_HARDCODED))
+                                        CastSpell(this, liquidSpellId, true);
+                                    else
+                                    {
+                                        SummonCreature(21508, TEMPSUMMON_TIMED_OOC_DESPAWN, 2000);
+                                        // Special update timer for the SSC water
+                                        m_positionStatusUpdateTimer = 2000;
+                                    }
                                 }
                             }
                         }
@@ -21984,8 +21988,8 @@ void Player::UpdateUnderwaterState(Map* m, float x, float y, float z)
                         {
                             CastSpell(this, pSpellEntry, true);
                         }
-
                     }
+
                     if (GetVehicle() && GetVehicle()->GetBase())
                     {
                         if (!GetVehicle()->GetBase()->HasAura(liquidSpellId))

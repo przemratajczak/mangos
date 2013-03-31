@@ -518,10 +518,10 @@ void Aura::AreaAura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *c
     switch(spellproto->Effect[eff])
     {
         case SPELL_EFFECT_APPLY_AREA_AURA_PARTY:
-            m_areaAuraType = AREA_AURA_PARTY;
+            m_areaAuraType = caster_ptr->IsCharmerOrOwnerPlayerOrPlayerItself() ? AREA_AURA_PARTY : AREA_AURA_FRIEND;
             break;
         case SPELL_EFFECT_APPLY_AREA_AURA_RAID:
-            m_areaAuraType = AREA_AURA_RAID;
+            m_areaAuraType = caster_ptr->IsCharmerOrOwnerPlayerOrPlayerItself() ? AREA_AURA_RAID : AREA_AURA_FRIEND;
             // Light's Beacon not applied to caster itself (TODO: more generic check for another similar spell if any?)
             if (target == caster_ptr && spellproto->Id == 53651)
                 m_modifier.m_auraname = SPELL_AURA_NONE;
@@ -543,7 +543,7 @@ void Aura::AreaAura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 *c
                 m_modifier.m_auraname = SPELL_AURA_NONE;
             break;
         default:
-            sLog.outError("Wrong spell effect in AreaAura constructor");
+            sLog.outError("Aura::AreaAura Wrong spell effect %u in AreaAura constructor", spellproto->Effect[eff]);
             MANGOS_ASSERT(false);
             break;
     }
@@ -2010,13 +2010,16 @@ void Aura::TriggerSpell()
 //                    case 67546: break;
                     case 69012:                             // Explosive Barrage - Krick and Ick
                     {
-                        if (triggerTarget->GetTypeId() == TYPEID_UNIT)
-                        {
-                            if (Unit* pTarget = ((Creature*)triggerTarget)->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0))
-                            {
-                                triggerTarget->CastSpell(pTarget, 69015, true);
-                            }
-                        }
+                       // Summon an Exploding Orb for each player in combat with the caster 
+                        ThreatList const& threatList = target->getThreatManager().getThreatList(); 
+                        for (ThreatList::const_iterator itr = threatList.begin(); itr != threatList.end(); ++itr) 
+                        { 
+                            if (Unit* expectedTarget = target->GetMap()->GetUnit((*itr)->getUnitGuid())) 
+                            { 
+                                if (expectedTarget->GetTypeId() == TYPEID_PLAYER) 
+                                    target->CastSpell(expectedTarget, 69015, true); 
+                            } 
+                        } 
                         return;
                     }
                     case 70017:                             // Gunship Cannon Fire
@@ -2386,6 +2389,7 @@ void Aura::TriggerSpell()
                 return;
             }
             case 44883:                                     // Encapsulate
+            case 56505:                                     // Surge of Power
             {
                 // Self cast spell, hence overwrite caster (only channeled spell where the triggered spell deals dmg to SELF)
                 triggerCaster = triggerTarget;
@@ -2707,6 +2711,13 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     case 54729:                             // Winged Steed of the Ebon Blade
                         Spell::SelectMountByAreaAndSkill(target, GetSpellProto(), 0, 0, 54726, 54727, 0);
                         return;
+                    case 60444:                                // Lost!
+                        if (target && target->GetTypeId() == TYPEID_PLAYER)
+                        {
+                            uint32 spell_id = (((Player*)target)->GetTeam() == ALLIANCE ? 60323 : 60328);
+                            target->CastSpell(target, spell_id + urand(0, 7), true);
+                            return;
+                        }
                     case 62061:                             // Festive Holiday Mount
                         if (target->HasAuraType(SPELL_AURA_MOUNTED))
                             // Reindeer Transformation
@@ -3709,9 +3720,22 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                             target->PlayDirectSound(14971, (Player *)target);
                         // Play part 3
                         else
-                            target->PlayDirectSound(14972, (Player *)target);
+                            target->PlayDirectSound(14972, (Player*)target);
+                        return;
                     }
-                    return;
+                case 68987:                                 // Pursuit 
+                { 
+                    Unit* caster = GetCaster(); 
+                    if (!caster || target->GetTypeId() != TYPEID_PLAYER) 
+                        return; 
+ 
+                    if (apply) 
+                        caster->FixateTarget(target); 
+                    else if (target->GetObjectGuid() == caster->GetFixatedTargetGuid()) 
+                        caster->FixateTarget(NULL); 
+ 
+                    return; 
+                }
                 case 27978:
                 case 40131:
                     if (apply)
@@ -8964,7 +8988,7 @@ void Aura::PeriodicTick()
                     if (GetAuraTicks() > 1 && ticks > 1)
                         // Item - Druid T10 Restoration 2P Bonus
                         if (Aura *aura = pCaster->GetAura(70658, EFFECT_INDEX_0))
-                            addition += abs(int32((addition * aura->GetModifier()->m_amount) / ((ticks-1)* 100)));
+                            addition += int32(aura->GetModifier()->m_amount * amount * ticks * (GetAuraTicks()-1) / 5000);
 
                     damageInfo.damage = damageInfo.damage + addition;
                 }
@@ -9641,14 +9665,27 @@ void Aura::PeriodicDummyTick()
                     target->CastSpell(target, 52443, true);
                     return;
                 case 53035:                                 // Summon Anub'ar Champion Periodic (Azjol Nerub)
-                    target->CastSpell(target, 53014, true); // Summon Anub'ar Champion
-                    return;
                 case 53036:                                 // Summon Anub'ar Necromancer Periodic (Azjol Nerub)
-                    target->CastSpell(target, 53015, true); // Summon Anub'ar Necromancer
-                    return;
                 case 53037:                                 // Summon Anub'ar Crypt Fiend Periodic (Azjol Nerub)
-                    target->CastSpell(target, 53016, true); // Summon Anub'ar Crypt Fiend
+                {
+                    uint32 summonSpells[3][3] =
+                    {
+                        {53090, 53014, 53064},              // Summon Anub'ar Champion
+                        {53092, 53015, 53066},              // Summon Anub'ar Necromancer
+                        {53091, 53016, 53065}               // Summon Anub'ar Crypt Fiend
+                    };
+
+                    // Cast different spell depending on trigger position
+                    // This will summon a different npc entry on each location - each of those has individual movement patern
+                    if (target->GetPositionZ() < 750.0f)
+                        target->CastSpell(target, summonSpells[spell->Id - 53035][0], true, NULL, this);
+                    else if (target->GetPositionX() > 500.0f)
+                        target->CastSpell(target, summonSpells[spell->Id - 53035][1], true, NULL, this);
+                    else
+                        target->CastSpell(target, summonSpells[spell->Id - 53035][2], true, NULL, this);
+
                     return;
+                }
                 case 53520:                                 // Carrion Beetles
                     target->CastSpell(target, 53521, true, NULL, this);
                     target->CastSpell(target, 53521, true, NULL, this);
@@ -10131,6 +10168,12 @@ void Aura::PeriodicDummyTick()
         }
         default:
             break;
+    }
+
+    if (Unit* caster = GetCaster())
+    {
+        if (target && target->GetTypeId() == TYPEID_UNIT)
+            sScriptMgr.OnEffectDummy(caster, GetId(), GetEffIndex(), (Creature*)target);
     }
 }
 

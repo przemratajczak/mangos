@@ -758,7 +758,7 @@ void Spell::EffectSchoolDMG(SpellEffectIndex effect_idx)
                     case 72999:
                     {
                         if (Aura const* aur = unitTarget->GetDummyAura(m_spellInfo->Id))
-                            damage += (aur->GetStackAmount() - 1) * aur->GetModifier()->m_amount;
+                            damage += aur->GetModifier()->m_amount;
 
                         break;
                     }
@@ -1421,6 +1421,26 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     }
 
                     m_caster->CastSpell(m_caster, spell_id, true, NULL);
+                    return;
+                }
+                case 17009:                                 // Voodoo
+                {
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    uint32 spell_id = 0;
+                    switch (urand(0, 6))
+                    {
+                        case 0: spell_id = 16707; break;    // Hex
+                        case 1: spell_id = 16708; break;    // Hex
+                        case 2: spell_id = 16709; break;    // Hex
+                        case 3: spell_id = 16711; break;    // Grow
+                        case 4: spell_id = 16712; break;    // Special Brew
+                        case 5: spell_id = 16713; break;    // Ghostly
+                        case 6: spell_id = 16716; break;    // Launch
+                    }
+
+                    m_caster->CastSpell(unitTarget, spell_id, true, NULL, NULL, m_originalCasterGUID, m_spellInfo);
                     return;
                 }
                 case 17251:                                 // Spirit Healer Res
@@ -2408,6 +2428,31 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                         pGo->Refresh();
                     }
                     return;
+                }
+                case 46292:                                 // Cataclysm Breath
+                {
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    uint32 spellId = 0;
+
+                    switch (urand(0, 7))
+                    {
+                        case 0: spellId = 46293; break;     // Corrosive Poison
+                        case 1: spellId = 46294; break;     // Fevered Fatigue
+                        case 2: spellId = 46295; break;     // Hex
+                        case 3: spellId = 46296; break;     // Necrotic Poison
+                        case 4: spellId = 46297; break;     // Piercing Shadow
+                        case 5: spellId = 46298; break;     // Shrink
+                        case 6: spellId = 46299; break;     // Wavering Will
+                        case 7: spellId = 46300; break;     // Withered Touch
+                        default:
+                            return;                         // Crazy :)
+                    }
+
+                    m_caster->CastSpell(m_caster, spellId, true);
+
+                    break;
                 }
                 case 46485:                                 // Greatmother's Soulcatcher
                 {
@@ -5082,6 +5127,32 @@ void Spell::EffectTeleportUnits(SpellEffectIndex eff_idx)   // TODO - Use target
             if (unitTarget->GetTypeId() != TYPEID_PLAYER)
                 return;
 
+            switch (m_spellInfo->Id)
+            {
+                case 48129:                                 // Scroll of Recall
+                case 60320:                                 // Scroll of Recall II
+                case 60321:                                 // Scroll of Recall III
+                {
+                    uint32 charLevel = 0;
+                    switch (m_spellInfo->Id)
+                    {
+                        case 48129: charLevel = 40; break;
+                        case 60320: charLevel = 70; break;
+                        case 60321: charLevel = 80; break;
+                        default: break;
+                    }
+
+                    if (((Player*)unitTarget)->getLevel() > charLevel)
+                    {
+                        unitTarget->CastSpell(unitTarget, 60444, true);
+                        return;
+                    }
+                }
+                default:
+                    break;
+            }
+
+
             ((Player*)unitTarget)->TeleportToHomebind(unitTarget == m_caster ? TELE_TO_SPELL|TELE_TO_CHECKED : TELE_TO_CHECKED);
             return;
         }
@@ -5360,7 +5431,8 @@ void Spell::EffectUnlearnSpecialization(SpellEffectIndex eff_idx)
 
     _player->removeSpell(spellToUnlearn);
 
-    DEBUG_LOG( "Spell: Player %u has unlearned spell %u from NpcGUID: %u", _player->GetGUIDLow(), spellToUnlearn, m_caster->GetGUIDLow() );
+    if (WorldObject const* caster = GetCastingObject())
+        DEBUG_LOG("Spell: %s has UnLearned spell %u from %s", _player->GetGuidStr().c_str(), spellToUnlearn, caster->GetGuidStr().c_str());
 }
 
 void Spell::EffectPowerDrain(SpellEffectIndex eff_idx)
@@ -6513,12 +6585,13 @@ void Spell::EffectLearnSpell(SpellEffectIndex eff_idx)
         return;
     }
 
-    Player *player = (Player*)unitTarget;
+    Player* player = (Player*)unitTarget;
 
-    uint32 spellToLearn = ((m_spellInfo->Id==SPELL_ID_GENERIC_LEARN) || (m_spellInfo->Id==SPELL_ID_GENERIC_LEARN_PET)) ? damage : m_spellInfo->EffectTriggerSpell[eff_idx];
+    uint32 spellToLearn = ((m_spellInfo->Id == SPELL_ID_GENERIC_LEARN) || (m_spellInfo->Id == SPELL_ID_GENERIC_LEARN_PET)) ? damage : m_spellInfo->EffectTriggerSpell[eff_idx];
     player->learnSpell(spellToLearn, false);
 
-    DEBUG_LOG( "Spell: Player %u has learned spell %u from NpcGUID=%u", player->GetGUIDLow(), spellToLearn, m_caster->GetGUIDLow() );
+    if (WorldObject const* caster = GetCastingObject())
+        DEBUG_LOG("Spell: %s has learned spell %u from %s", player->GetGuidStr().c_str(), spellToLearn, caster->GetGuidStr().c_str());
 }
 
 void Spell::EffectDispel(SpellEffectIndex eff_idx)
@@ -6790,7 +6863,7 @@ void Spell::DoSummonWild(SpellEffectIndex eff_idx, uint32 forceFaction)
     {
         WorldLocation p = center;
         // If dest location if present
-        if (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION)
+        if (m_targets.m_targetMask & TARGET_FLAG_DEST_LOCATION && !p.IsEmpty())
         {
             m_caster->GetRandomPoint(center.x, center.y, center.z, radius, p.x, p.y, p.z);
             m_caster->GetMap()->GetHitPosition(center.x,center.y,center.z, p.x, p.y, p.z, m_caster->GetPhaseMask(),-0.1f);
@@ -6799,13 +6872,13 @@ void Spell::DoSummonWild(SpellEffectIndex eff_idx, uint32 forceFaction)
         // Summon if dest location not present near caster
         else
         {
-            if (radius > 0.0f)
+            if (radius > M_NULL_F && radius < m_caster->GetMap()->GetVisibilityDistance())
             {
                 // not using bounding radius of caster here
-                m_caster->GetClosePoint(p.x, p.y, p.z, p.o, radius);
+                p = m_caster->GetClosePoint(M_NULL_F, radius);
                 WorldLocation const& loc = m_caster->GetPosition();
                 m_caster->GetMap()->GetHitPosition(loc.x, loc.y, loc.z, p.x, p.y, p.z, m_caster->GetPhaseMask(),-0.1f);
-                m_caster->UpdateAllowedPositionZ(p.x,p.y,p.z);
+                m_caster->UpdateAllowedPositionZ(p.x, p.y, p.z);
             }
             else
             {
@@ -7032,7 +7105,7 @@ void Spell::EffectTeleUnitsFaceCaster(SpellEffectIndex eff_idx)
 
 void Spell::EffectLearnSkill(SpellEffectIndex eff_idx)
 {
-    if (unitTarget->GetTypeId() != TYPEID_PLAYER)
+    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
         return;
 
     if (damage < 0)
@@ -7041,6 +7114,9 @@ void Spell::EffectLearnSkill(SpellEffectIndex eff_idx)
     uint32 skillid =  m_spellInfo->EffectMiscValue[eff_idx];
     uint16 skillval = ((Player*)unitTarget)->GetPureSkillValue(skillid);
     ((Player*)unitTarget)->SetSkill(skillid, skillval ? skillval : 1, damage * 75, damage);
+
+    if (WorldObject const* caster = GetCastingObject())
+        DEBUG_LOG("Spell: %s has learned skill %u value %u from %s", unitTarget->GetGuidStr().c_str(), skillid, skillval, caster->GetGuidStr().c_str());
 }
 
 void Spell::EffectAddHonor(SpellEffectIndex /*eff_idx*/)
@@ -7484,6 +7560,9 @@ void Spell::EffectLearnPetSpell(SpellEffectIndex eff_idx)
 
     pet->SavePetToDB(PET_SAVE_AS_CURRENT);
     _player->PetSpellInitialize();
+
+    if (WorldObject const* caster = GetCastingObject())
+        DEBUG_LOG("Spell: %s has learned spell %u from %s", pet->GetGuidStr().c_str(), learn_spellproto->Id, caster->GetGuidStr().c_str());
 }
 
 void Spell::EffectTaunt(SpellEffectIndex /*eff_idx*/)
@@ -9683,6 +9762,14 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     unitTarget->RemoveAurasDueToSpell(m_spellInfo->CalculateSimpleValue(eff_idx));
                     break;
                 }
+                case 56072:                                 // Ride Red Dragon Buddy
+                {
+                    if (!unitTarget)
+                        return;
+
+                    m_caster->CastSpell(unitTarget, m_spellInfo->CalculateSimpleValue(eff_idx), true);
+                    break;
+                }
                 case 56659:                                 //  Build Demolisher (Force)
                 case 56662:                                 //  Build Siege Vehicle (Force) - alliance
                 case 56664:                                 //  Build Catapult (Force)
@@ -11262,6 +11349,14 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
     {
         for (SpellLinkedSet::const_iterator itr = linkedSet.begin(); itr != linkedSet.end(); ++itr)
             m_caster->CastSpell(unitTarget, *itr, true, NULL, NULL, m_caster->GetObjectGuid(), m_spellInfo);
+    }
+
+    // Script based implementation. Must be used only for not good for implementation in core spell effects
+    // So called only for not processed cases
+    if (unitTarget->GetTypeId() == TYPEID_UNIT)
+    {
+        if (sScriptMgr.OnEffectScriptEffect(m_caster, m_spellInfo->Id, eff_idx, (Creature*)unitTarget))
+            return;
     }
 
     // Previous effect might have started script

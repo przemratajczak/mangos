@@ -6805,7 +6805,7 @@ void Spell::DoSummonWild(SpellEffectIndex eff_idx, uint32 forceFaction)
             if (radius > M_NULL_F && radius < m_caster->GetMap()->GetVisibilityDistance())
             {
                 // not using bounding radius of caster here
-                p = m_caster->GetClosePoint(M_NULL_F, radius);
+                p = m_caster->GetClosePoint(M_NULL_F, radius, 0.0f, m_caster);
                 WorldLocation const& loc = m_caster->GetPosition();
                 m_caster->GetMap()->GetHitPosition(loc.x, loc.y, loc.z, p.x, p.y, p.z, m_caster->GetPhaseMask(),-0.1f);
                 m_caster->UpdateAllowedPositionZ(p.x, p.y, p.z);

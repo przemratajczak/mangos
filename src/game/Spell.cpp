@@ -3090,7 +3090,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
         case TARGET_RIGHT_FROM_VICTIM:
         case TARGET_LEFT_FROM_VICTIM:
         {
-            Unit *pTarget = NULL;
+            Unit* pTarget = NULL;
 
             // explicit cast data from client or server-side cast
             // some spell at client send caster
@@ -3100,6 +3100,8 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                 pTarget = m_caster->getVictim();
             else if (m_caster->GetTypeId() == TYPEID_PLAYER)
                 pTarget = ObjectAccessor::GetUnit(*m_caster, ((Player*)m_caster)->GetSelectionGuid());
+            else if (m_targets.getUnitTarget())
+                pTarget = m_caster;
 
             if (pTarget)
             {
@@ -3108,13 +3110,13 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                 switch(targetMode)
                 {
-                    case TARGET_INFRONT_OF_VICTIM:                      break;
+                    case TARGET_INFRONT_OF_VICTIM:                        break;
                     case TARGET_BEHIND_VICTIM:      angle = M_PI_F;       break;
                     case TARGET_RIGHT_FROM_VICTIM:  angle = -M_PI_F / 2;  break;
                     case TARGET_LEFT_FROM_VICTIM:   angle = M_PI_F / 2;   break;
                 }
 
-                WorldLocation loc = pTarget->GetClosePoint(pTarget->GetObjectBoundingRadius(), dist, angle, m_caster);
+                WorldLocation loc = pTarget->GetClosePoint(pTarget->GetObjectBoundingRadius(), radius, angle, m_caster);
                 if (pTarget->IsWithinLOS(loc.x, loc.y, loc.z))
                 {
                     targetUnitMap.push_back(m_caster);

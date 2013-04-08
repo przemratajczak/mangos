@@ -1759,7 +1759,8 @@ TerrainInfo const* WorldObject::GetTerrain() const
 
 void WorldObject::AddObjectToRemoveList()
 {
-    GetMap()->AddObjectToRemoveList(this);
+    if (Map* map = GetMap())
+        map->AddObjectToRemoveList(this);
 }
 
 void WorldObject::RemoveObjectFromRemoveList()

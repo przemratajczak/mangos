@@ -4769,8 +4769,8 @@ void Spell::EffectForceCast(SpellEffectIndex eff_idx)
         if (spellInfo->Effect[i] == SPELL_EFFECT_NONE)
             continue;
 
-        if (spellInfo->EffectImplicitTargetA[i] == TARGET_DUELVSPLAYER &&
-            spellInfo->EffectImplicitTargetB[i] == TARGET_NONE)
+        if (m_spellInfo->EffectImplicitTargetA[i] == TARGET_DUELVSPLAYER &&
+            m_spellInfo->EffectImplicitTargetB[i] == TARGET_NONE)
         {
             b_castBack = true;
             break;

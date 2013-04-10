@@ -735,6 +735,7 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
         case 24732:                                         // Bat Costume
         case 59286:                                         // Opening
         case 43730:                                         // Electrified
+        case 45279:                                         // Winterfin Tadpole Cage Opened - Player Cast
         case 47540:                                         // Penance start dummy aura - Rank 1
         case 53005:                                         // Penance start dummy aura - Rank 2
         case 53006:                                         // Penance start dummy aura - Rank 3
@@ -867,8 +868,6 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                         return true;
                     // let check by target modes (for Amplify Magic cases/etc)
                     break;
-                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
-                    return (spellproto->CalculateSimpleValue(effIndex) < 0);
                 case SPELL_AURA_MOD_SPELL_CRIT_CHANCE:
                 case SPELL_AURA_MOD_INCREASE_HEALTH_PERCENT:
                 case SPELL_AURA_MOD_DAMAGE_PERCENT_DONE:
@@ -1017,13 +1016,22 @@ bool IsPositiveEffect(SpellEntry const *spellproto, SpellEffectIndex effIndex)
                     }
                     break;
                 }
-                case SPELL_EFFECT_FORCE_CAST:   // positive in all cases?
-                    return true;
+                case SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT:
+                {
+                    if (spellproto->CalculateSimpleValue(effIndex) < 0)
+                        return true;
+                    else
+                        return false;
+                }
                 default:
                     break;
             }
             break;
         }
+
+        //case SPELL_EFFECT_FORCE_CAST:
+        // return true;
+
         default:
             break;
     }

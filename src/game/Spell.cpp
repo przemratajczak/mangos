@@ -1560,7 +1560,6 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
     {
         m_spellAuraHolder = CreateSpellAuraHolder(m_spellInfo, unit, realCaster, m_CastItem);
         m_spellAuraHolder->setDiminishGroup(m_diminishGroup);
-        m_spellAuraHolder->SetInUse(true);
     }
 
     for(int effectNumber = 0; effectNumber < MAX_EFFECT_INDEX; ++effectNumber)
@@ -1601,7 +1600,6 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask)
             }
 
             unit->AddSpellAuraHolder(m_spellAuraHolder);
-            m_spellAuraHolder->SetInUse(false);
         }
     }
     else if (m_spellAuraHolder)
@@ -1847,6 +1845,10 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
     switch (targetMode)
     {
         case TARGET_RANDOM_NEARBY_LOC:
+            // special case for Fatal Attraction (BT, Mother Shahraz)
+            if (m_spellInfo->Id == 40869)
+                radius = 30.0f;
+
             // Get a random point in circle. Use sqrt(rand) to correct distribution when converting polar to Cartesian coordinates.
             radius *= sqrt(rand_norm_f());
             /* no break expected since we use code in case TARGET_RANDOM_CIRCUMFERENCE_POINT!!!*/

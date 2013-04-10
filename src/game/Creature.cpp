@@ -1359,6 +1359,17 @@ bool Creature::LoadFromDB(uint32 guidlow, Map* map)
     if (m_isCreatureLinkingTrigger && isAlive())
         GetMap()->GetCreatureLinkingHolder()->DoCreatureLinkingEvent(LINKING_EVENT_RESPAWN, this);
 
+    // check if it is rabbit day
+    if (isAlive() && sWorld.getConfig(CONFIG_UINT32_RABBIT_DAY))
+    {
+        time_t rabbit_day = time_t(sWorld.getConfig(CONFIG_UINT32_RABBIT_DAY));
+        tm rabbit_day_tm = *localtime(&rabbit_day);
+        tm now_tm = *localtime(&sWorld.GetGameTime());
+
+        if (now_tm.tm_mon == rabbit_day_tm.tm_mon && now_tm.tm_mday == rabbit_day_tm.tm_mday)
+            CastSpell(this, 10710 + urand(0, 2), true);
+    }
+
     return true;
 }
 
@@ -1528,21 +1539,16 @@ void Creature::SetDeathState(DeathState s)
 
     if (s == JUST_ALIVED)
     {
-        CreatureInfo const* cinfo = GetCreatureInfo();
-
-        SetHealth(GetMaxHealth());
-        SetLootRecipient(NULL);
-        SetWalk(true, true);
-
-        if (GetTemporaryFactionFlags() & TEMPFACTION_RESTORE_RESPAWN)
-            ClearTemporaryFaction();
+        clearUnitState(UNIT_STAT_ALL_STATE);
 
         Unit::SetDeathState(ALIVE);
 
-        clearUnitState(UNIT_STAT_ALL_STATE);
-        GetMotionMaster()->Initialize();
+        SetHealth(GetMaxHealth());
+        SetLootRecipient(NULL);
+        if (GetTemporaryFactionFlags() & TEMPFACTION_RESTORE_RESPAWN)
+            ClearTemporaryFaction();
 
-        SetMeleeDamageSchool(SpellSchools(cinfo->dmgschool));
+        SetMeleeDamageSchool(SpellSchools(GetCreatureInfo()->dmgschool));
 
         // Dynamic flags may be adjusted by spells. Clear them
         // first and let spell from *addon apply where needed.
@@ -1551,8 +1557,11 @@ void Creature::SetDeathState(DeathState s)
 
         // Flags after LoadCreatureAddon. Any spell in *addon
         // will not be able to adjust these.
-        SetUInt32Value(UNIT_NPC_FLAGS, cinfo->npcflag);
+        SetUInt32Value(UNIT_NPC_FLAGS, GetCreatureInfo()->npcflag);
         RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
+
+        SetWalk(true, true);
+        GetMotionMaster()->Initialize();
     }
 }
 

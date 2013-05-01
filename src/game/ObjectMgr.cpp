@@ -1599,6 +1599,10 @@ void ObjectMgr::LoadGameObjects()
         if (gameEvent==0 && GuidPoolId==0 && EntryPoolId==0)// if not this is to be managed by GameEvent System or Pool system
             AddGameobjectToGrid(guid, &data);
 
+        //uint32 zoneId, areaId;
+        //sTerrainMgr.LoadTerrain(data.mapid)->GetZoneAndAreaId(zoneId, areaId, data.posX, data.posY, data.posZ);
+        //sLog.outErrorDb("UPDATE gameobject SET zone_id=%u, area_id=%u WHERE guid=%u;", zoneId, areaId, guid);
+
         ++count;
 
     } while (result->NextRow());
@@ -2664,6 +2668,14 @@ void ObjectMgr::LoadPetLevelInfo()
     }
 
     PetLevelInfo* petBaseInfo = petInfo[1];
+
+    // fatal error if no base pet with id 1
+    if (!petBaseInfo)
+    {
+        sLog.outErrorDb("Table `pet_levelstats` does not have requered base pet with id 1! Must be exist!");
+        Log::WaitBeforeContinueIfNeed();
+        exit(1);
+    }
 
     // Fill gaps and check integrity
     for (PetLevelInfoMap::iterator itr = petInfo.begin(); itr != petInfo.end(); ++itr)
@@ -6660,11 +6672,9 @@ std::string ObjectMgr::GeneratePetName(uint32 entry)
 
     if (list0.empty() || list1.empty())
     {
-        CreatureInfo const *cinfo = GetCreatureTemplate(entry);
+        CreatureInfo const* cinfo = GetCreatureTemplate(entry);
         char const* petname = GetPetName(cinfo->family, sWorld.GetDefaultDbcLocale());
-        if (!petname)
-            petname = cinfo->Name;
-        return std::string(petname);
+        return std::string(petname ? petname : "");
     }
 
     return *(list0.begin()+urand(0, list0.size()-1)) + *(list1.begin()+urand(0, list1.size()-1));

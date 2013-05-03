@@ -13458,6 +13458,18 @@ void Unit::ExitVehicle(bool forceDismount)
         sLog.outDetail("Unit::ExitVehicle: unit %s leave vehicle %s but no control aura!", GetObjectGuid().GetString().c_str(), vehicleBase->GetObjectGuid().GetString().c_str());
     }
 
+    // Dirty hack to avoid unsummon Gormok th Impaler
+    switch (vehicleBase->GetEntry())
+    {
+        case 34796:
+        case 35438:
+        case 35439:
+        case 35440:
+            dismiss = false;
+            break;
+    }
+
+
     // While dismount process unit may lost VehicleKit
     if (dismiss && !vehicleBase->HasAuraType(SPELL_AURA_CONTROL_VEHICLE))
         ((Creature*)vehicleBase)->ForcedDespawn(1000);

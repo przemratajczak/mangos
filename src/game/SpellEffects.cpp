@@ -2480,6 +2480,14 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
 
                     break;
                 }
+                case 46372:                                 // Ice Spear Target Picker
+                {
+                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    m_caster->CastSpell(unitTarget, 46359, true);
+                    return;
+                }
                 case 46485:                                 // Greatmother's Soulcatcher
                 {
                     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_UNIT)
@@ -3728,6 +3736,15 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                             unitTarget->CastSpell(unitTarget, 71236, false);
                             break;
                     }
+                    break;
+                }
+                case 71281:                                 // Slave Trigger Closest (Q:24498)
+                {
+                    if (!m_caster || m_caster->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    Player* pPlayer = (Player*)m_caster;
+                    pPlayer->KilledMonsterCredit(pPlayer->GetTeam() == ALLIANCE ? 36764 : 36770);
                     break;
                 }
                 case 71307:                                 // Vile Gas (Festergut, Rotface)
@@ -6306,6 +6323,25 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
         return;
     }
 
+    // Get casting object
+    WorldObject* realCaster = GetCastingObject();
+    if (!realCaster)
+    {
+        sLog.outError("EffectSummonType: No Casting Object found for spell %u, (caster = %s)", m_spellInfo->Id, m_caster->GetGuidStr().c_str());
+        return;
+    }
+
+    Unit* responsibleCaster = m_originalCaster;
+    if (realCaster->GetTypeId() == TYPEID_GAMEOBJECT)
+        responsibleCaster = ((GameObject*)realCaster)->GetOwner();
+
+    uint32 factionId = summon_prop->FactionId ? summon_prop->FactionId :
+                        // Else set faction to summoner's faction for pet-like summoned
+                        ((summon_prop->Flags & SUMMON_PROP_FLAG_INHERIT_FACTION) ? 
+                        (responsibleCaster ? responsibleCaster->getFaction() : m_caster->getFaction()) :
+                        // else auto faction detect
+                        0);
+
     switch(summon_prop->Group)
     {
         // faction handled later on, or loaded from template
@@ -6325,15 +6361,15 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
                     else if (m_spellInfo->EffectMiscValueB[eff_idx] == 2301)
                         DoSummonSnakes(eff_idx);
                     else if (prop_id == 1021)
-                        DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                        DoSummonGuardian(eff_idx, factionId);
                     else
-                        DoSummonWild(eff_idx, summon_prop->FactionId);
+                        DoSummonWild(eff_idx, factionId);
                     break;
                 }
                 case UNITNAME_SUMMON_TITLE_PET:
                 case UNITNAME_SUMMON_TITLE_MINION:
                 case UNITNAME_SUMMON_TITLE_RUNEBLADE:
-                    DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                    DoSummonGuardian(eff_idx, factionId);
                     break;
                 case UNITNAME_SUMMON_TITLE_GUARDIAN:
                 {
@@ -6354,7 +6390,7 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
                             if (cInfo->type == CREATURE_TYPE_TOTEM)
                                 DoSummonTotem(eff_idx);
                             else
-                                DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                                DoSummonGuardian(eff_idx, factionId);
                         }
                     }
                     else
@@ -6364,9 +6400,9 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
                 case UNITNAME_SUMMON_TITLE_CONSTRUCT:
                 {
                     if (prop_id == 2913)                    // Scrapbot
-                        DoSummonWild(eff_idx, summon_prop->FactionId);
+                        DoSummonWild(eff_idx, factionId);
                     else
-                        DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                        DoSummonGuardian(eff_idx, factionId);
                     break;
                 }
                 case UNITNAME_SUMMON_TITLE_TOTEM:
@@ -6375,18 +6411,18 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
                 case UNITNAME_SUMMON_TITLE_COMPANION:
                     // slot 6 set for critters that can help to player in fighting
                     if (summon_prop->Slot == 6)
-                        DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                        DoSummonGuardian(eff_idx, factionId);
                     else
-                        DoSummonCritter(eff_idx, summon_prop->FactionId);
+                        DoSummonCritter(eff_idx, factionId);
                     break;
                 case UNITNAME_SUMMON_TITLE_OPPONENT:
                 case UNITNAME_SUMMON_TITLE_LIGHTWELL:
                 case UNITNAME_SUMMON_TITLE_BUTLER:
                 case UNITNAME_SUMMON_TITLE_MOUNT:
-                    DoSummonWild(eff_idx, summon_prop->FactionId);
+                    DoSummonWild(eff_idx, factionId);
                     break;
                 case UNITNAME_SUMMON_TITLE_VEHICLE:
-                    DoSummonWild(eff_idx, summon_prop->FactionId);
+                    DoSummonWild(eff_idx, factionId);
                     break;
                 default:
                     sLog.outError("EffectSummonType: Unhandled summon title %u", summon_prop->Title);
@@ -6411,7 +6447,7 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
                     EffectSummonPossessed(eff_idx);
                     break;
                 default:
-                    DoSummonGuardian(eff_idx, summon_prop->FactionId);
+                    DoSummonGuardian(eff_idx, factionId);
                 break;
             }
             break;
@@ -6419,9 +6455,7 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
         case SUMMON_PROP_GROUP_VEHICLE:
         case SUMMON_PROP_GROUP_UNCONTROLLABLE_VEHICLE:
         {
-            DoSummonVehicle(eff_idx, summon_prop->FactionId);
-//            sLog.outDebug("EffectSummonType: Unhandled summon group type SUMMON_PROP_GROUP_VEHICLE(%u)", summon_prop->Group);
-//            Mangos developers thinking - this summon is not supported. But in this his worked fine :)
+            DoSummonVehicle(eff_idx, factionId);
             break;
         }
         default:
@@ -6550,7 +6584,7 @@ void Spell::DoSummonGroupPets(SpellEffectIndex eff_idx)
         if (!pet->Summon())
         {
             sLog.outError("Spell::EffectSummonGroupPets: %s not summoned by undefined reason.", pet->GetGuidStr().c_str());
-                
+
             delete pet;
             return;
         }
@@ -9191,7 +9225,15 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     unitTarget->CastSpell(unitTarget, spellId, true);
                     break;
                 }
-                case 46642:                                 //5,000 Gold
+                case 46430:                                 // Synch Health
+                {
+                    if (!unitTarget)
+                        return;
+
+                    unitTarget->SetHealth(m_caster->GetHealth());
+                    return;
+                }
+                case 46642:                                 // 5,000 Gold
                 {
                     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
                         return;
@@ -11808,14 +11850,18 @@ void Spell::EffectInebriate(SpellEffectIndex /*eff_idx*/)
     if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
         return;
 
-    Player *player = (Player*)unitTarget;
-    uint16 currentDrunk = player->GetDrunkValue();
-    uint16 drunkMod = damage * 256;
-    if (currentDrunk + drunkMod > 0xFFFF)
-        currentDrunk = 0xFFFF;
-    else
-        currentDrunk += drunkMod;
-    player->SetDrunkValue(currentDrunk, m_CastItem ? m_CastItem->GetEntry() : 0);
+    Player* player = (Player*)unitTarget;
+
+    uint8 drunkValue = player->GetDrunkValue() + (uint8)damage;
+    if (drunkValue > 100)
+    {
+        drunkValue = 100;
+
+        if (roll_chance_i(25))
+            player->CastSpell(player, 67468, false);    // Drunken Vomit
+    }
+
+    player->SetDrunkValue(drunkValue, m_CastItem ? m_CastItem->GetEntry() : 0);
 }
 
 void Spell::EffectFeedPet(SpellEffectIndex eff_idx)
@@ -12988,8 +13034,8 @@ void Spell::EffectBind(SpellEffectIndex eff_idx)
     DEBUG_LOG("New Home AreaId is %u", area_id);
 
     // zone update
-    data.Initialize(SMSG_PLAYERBOUND, 8+4);
-    data << player->GetObjectGuid();
+    data.Initialize(SMSG_PLAYERBOUND, 8 + 4);
+    data << m_caster->GetObjectGuid();
     data << uint32(area_id);
     player->SendDirectMessage(&data);
 }

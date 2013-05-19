@@ -1266,17 +1266,6 @@ void SpellMgr::LoadSpellTargetPositions()
                 spellInfo->EffectImplicitTargetB[i] == TARGET_SCRIPT_COORDINATES ||
                 spellInfo->EffectImplicitTargetB[i] == TARGET_SELF2)
             {
-                // additional requirements
-                if (spellInfo->Effect[i] == SPELL_EFFECT_BIND && spellInfo->EffectMiscValue[i])
-                {
-                    uint32 zone_id = st.GetZoneId();
-                    if (int32(zone_id) != spellInfo->EffectMiscValue[i])
-                    {
-                        sLog.outErrorDb("Spell (Id: %u) listed in `spell_target_position` expected point to zone %u bit point to zone %u.",Spell_ID, spellInfo->EffectMiscValue[i], zone_id);
-                        break;
-                    }
-                }
-
                 found = true;
                 break;
             }
@@ -2607,6 +2596,7 @@ uint32 SpellMgr::GetSpellMaxTargetsWithCustom(SpellEntry const* spellInfo, Unit 
                 case 46298:                                 // Shrink
                 case 46299:                                 // Wavering Will
                 case 46300:                                 // Withered Touch
+                case 46372:                                 // Ice Spear Target Picker (Slave Pens, Ahune)
                 case 47669:                                 // Wakeup Subboss (Utgarde Pinnacle)
                 case 48278:                                 // Paralyze (Utgarde Pinnacle)
                 case 50988:                                 // Glare of the Tribunal (Halls of Stone)

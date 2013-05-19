@@ -1256,9 +1256,9 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
         else
             damageInfo.procEx |= PROC_EX_NORMAL_HIT;
 
-        damageInfo.absorb = 0;
+        damageInfo.SetAbsorb(0);
         damageInfo.target->CalculateHealAbsorb(damageInfo.damage, &damageInfo.absorb);
-        damageInfo.damage -= damageInfo.absorb;
+        damageInfo.damage -= damageInfo.GetAbsorb();
 
         // Do triggers for unit (reflect triggers passed on hit phase for correct drop charge)
         if (m_canTrigger && missInfo != SPELL_MISS_REFLECT)
@@ -1305,7 +1305,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
         damageInfo.procEx = createProcExtendMask(&damageInfo, missInfo);
         damageInfo.procVictim |= PROC_FLAG_TAKEN_ANY_DAMAGE;
 
-        if (damageInfo.absorb && damageInfo.damage == 0)
+        if (damageInfo.GetAbsorb() && damageInfo.damage == 0)
             damageInfo.procEx &= ~PROC_EX_DIRECT_DAMAGE;
         else if (damageInfo.damage > 0)
             damageInfo.procEx |= PROC_EX_DIRECT_DAMAGE;
@@ -1329,7 +1329,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
         if (m_spellInfo->SpellFamilyName == SPELLFAMILY_WARLOCK && m_spellInfo->SpellIconID == 3172 &&
             m_spellInfo->GetSpellFamilyFlags().test<CF_WARLOCK_HAUNT>())
             if (Aura const* dummy = unitTarget->GetDummyAura(m_spellInfo->Id))
-                dummy->GetModifier()->m_amount = damageInfo.damage + damageInfo.absorb;
+                dummy->GetModifier()->m_amount = damageInfo.damage + damageInfo.GetAbsorb();
 
         /* process anticheat check */
         if (caster->GetObjectGuid().IsPlayer())
@@ -3080,7 +3080,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                 // TODO - maybe use an (internal) value for the map for neat far teleport handling
 
                 // far-teleport spells are handled in SpellEffect, elsewise report an error about an unexpected map (spells are always locally)
-                if (st->GetMapId() != m_caster->GetMapId() && m_spellInfo->Effect[effIndex] != SPELL_EFFECT_TELEPORT_UNITS)
+                if (st->GetMapId() != m_caster->GetMapId() && m_spellInfo->Effect[effIndex] != SPELL_EFFECT_TELEPORT_UNITS && m_spellInfo->Effect[effIndex] != SPELL_EFFECT_BIND)
                     sLog.outError( "SPELL: wrong map (%u instead %u) target coordinates for spell ID %u", st->GetMapId(), m_caster->GetMapId(), m_spellInfo->Id);
             }
             else
@@ -6727,9 +6727,6 @@ SpellCastResult Spell::CheckCast(bool strict)
             {
                 if (m_caster->IsInWater())
                     return SPELL_FAILED_ONLY_ABOVEWATER;
-
-                if (m_caster->GetTypeId() == TYPEID_PLAYER && ((Player*)m_caster)->GetTransport())
-                    return SPELL_FAILED_NO_MOUNTS_ALLOWED;
 
                 // Ignore map check if spell have AreaId. AreaId already checked and this prevent special mount spells
                 if (m_caster->GetTypeId() == TYPEID_PLAYER && !sMapStore.LookupEntry(m_caster->GetMapId())->IsMountAllowed() && !m_IsTriggeredSpell && !m_spellInfo->AreaGroupId)

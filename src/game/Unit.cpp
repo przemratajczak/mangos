@@ -288,8 +288,6 @@ Unit::Unit() :
     m_isCreatureLinkingTrigger = false;
     m_isSpawningLinked = false;
 
-    m_transport = NULL;
-
     m_pVehicleKit = VehicleKitPtr(NULL);
     m_pVehicle    = VehicleKitPtr(NULL);
 
@@ -498,17 +496,17 @@ bool Unit::haveOffhandWeapon() const
     }
 }
 
-bool Unit::SetPosition(float x, float y, float z, float orientation, bool teleport)
+bool Unit::SetPosition(Position const& pos, bool teleport)
 {
     // prevent crash when a bad coord is sent by the client
-    if (!MaNGOS::IsValidMapCoord(x, y, z, orientation))
+    if (!MaNGOS::IsValidMapCoord(pos.x, pos.y, pos.z, pos.orientation))
     {
-        DEBUG_LOG("Unit::SetPosition(%f, %f, %f, %f, %d) .. bad coordinates for unit %d!", x, y, z, orientation, teleport, GetGUIDLow());
+        DEBUG_LOG("Unit::SetPosition(%f, %f, %f, %f, %d) .. bad coordinates for unit %s!", pos.x, pos.y, pos.z, pos.orientation, teleport, GetObjectGuid().GetString().c_str());
         return false;
     }
 
-    bool turn = GetOrientation() != orientation;
-    bool relocate = (teleport || GetPositionX() != x || GetPositionY() != y || GetPositionZ() != z);
+    bool turn = fabs(GetOrientation() - pos.orientation) > M_NULL_F;
+    bool relocate = !((Position)GetPosition() == pos);
 
     if (turn)
         RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TURNING);
@@ -518,12 +516,12 @@ bool Unit::SetPosition(float x, float y, float z, float orientation, bool telepo
         RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_MOVE);
 
         if (GetTypeId() == TYPEID_PLAYER)
-            GetMap()->Relocation((Player*)this, x, y, z, orientation);
+            GetMap()->Relocation((Player*)this, pos);
         else
-            GetMap()->Relocation((Creature*)this, x, y, z, orientation);
+            GetMap()->Relocation((Creature*)this, pos);
     }
     else if (turn)
-        SetOrientation(orientation);
+        SetOrientation(pos.orientation);
 
     return relocate || turn;
 }
@@ -624,9 +622,7 @@ void Unit::DealDamageMods(DamageInfo* damageInfo)
 
     if (!pVictim->isAlive() || pVictim->IsTaxiFlying() || (pVictim->GetTypeId() == TYPEID_UNIT && ((Creature*)pVictim)->IsInEvadeMode()))
     {
-        if (damageInfo->absorb)
-            damageInfo->absorb += damageInfo->damage;
-        damageInfo->damage = 0;
+        damageInfo->AddAbsorb(damageInfo->damage);
         return;
     }
 
@@ -634,9 +630,7 @@ void Unit::DealDamageMods(DamageInfo* damageInfo)
     //You still see it in the combat log though
     if (!IsAllowedDamageInArea(pVictim))
     {
-        if (damageInfo->absorb)
-            damageInfo->absorb += damageInfo->damage;
-        damageInfo->damage = 0;
+        damageInfo->AddAbsorb(damageInfo->damage);
     }
 
     uint32 originalDamage = damageInfo->damage;
@@ -648,8 +642,8 @@ void Unit::DealDamageMods(DamageInfo* damageInfo)
     if ( pVictim->GetTypeId()== TYPEID_UNIT && ((Creature *)pVictim)->AI() )
         ((Creature *)pVictim)->AI()->DamageTaken(this, damageInfo->damage);
 
-    if (damageInfo->absorb && originalDamage > damageInfo->damage)
-        damageInfo->absorb += (originalDamage - damageInfo->damage);
+    if (originalDamage > damageInfo->damage)
+        damageInfo->AddAbsorb(originalDamage - damageInfo->damage);
 }
 
 uint32 Unit::DealDamage(Unit* pVictim, uint32 damage, DamageInfo* damageInfo, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask, SpellEntry const *spellProto, bool durabilityLoss)
@@ -741,7 +735,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
         if (!damageInfo->cleanDamage)
             return 0;
 
-        if (!damageInfo->absorb)
+        if (!damageInfo->GetAbsorb())
         {
             // Rage from physical damage received .
             if (damageInfo->cleanDamage && (damageInfo->SchoolMask() & SPELL_SCHOOL_MASK_NORMAL) && pVictim->GetTypeId() == TYPEID_PLAYER && (pVictim->getPowerType() == POWER_RAGE))
@@ -847,7 +841,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
                 else
                     weaponSpeedHitFactor = uint32(GetAttackTime(damageInfo->attackType)/1000.0f * 3.5f);
 
-                ((Player*)this)->RewardRage(damageInfo->damage + damageInfo->absorb, weaponSpeedHitFactor, true);
+                ((Player*)this)->RewardRage(damageInfo->damage + damageInfo->GetAbsorb(), weaponSpeedHitFactor, true);
 
                 break;
             }
@@ -858,7 +852,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
                 else
                     weaponSpeedHitFactor = uint32(GetAttackTime(damageInfo->attackType)/1000.0f * 1.75f);
 
-                ((Player*)this)->RewardRage(damageInfo->damage + damageInfo->absorb, weaponSpeedHitFactor, true);
+                ((Player*)this)->RewardRage(damageInfo->damage + damageInfo->GetAbsorb(), weaponSpeedHitFactor, true);
 
                 break;
             }
@@ -1102,7 +1096,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
 
         if (pVictim->GetTypeId() != TYPEID_PLAYER)
         {
-            float threat = (damageInfo->damage + (damageInfo->cleanDamage ? (damageInfo->cleanDamage + damageInfo->absorb) : 0)) * sSpellMgr.GetSpellThreatMultiplier(spellProto);
+            float threat = (damageInfo->damage + (damageInfo->cleanDamage ? (damageInfo->cleanDamage + damageInfo->GetAbsorb()) : 0)) * sSpellMgr.GetSpellThreatMultiplier(spellProto);
             pVictim->AddThreat(this, threat, (damageInfo->cleanDamage && damageInfo->hitOutCome == MELEE_HIT_CRIT), damageInfo->SchoolMask(), spellProto);
         }
         else                                                // victim is a player
@@ -1110,7 +1104,7 @@ uint32 Unit::DealDamage(DamageInfo* damageInfo)
             // Rage from damage received
             if (this != pVictim && pVictim->getPowerType() == POWER_RAGE)
             {
-                uint32 rage_damage = damageInfo->damage + (damageInfo->cleanDamage ? (damageInfo->cleanDamage + damageInfo->absorb) : 0);
+                uint32 rage_damage = damageInfo->damage + (damageInfo->cleanDamage ? (damageInfo->cleanDamage + damageInfo->GetAbsorb()) : 0);
                 ((Player*)pVictim)->RewardRage(rage_damage, 0, false);
             }
 
@@ -1747,7 +1741,7 @@ void Unit::DealSpellDamage(DamageInfo* damageInfo, bool durabilityLoss)
         return;
 
     // Call default DealDamage (send critical in hit info for threat calculation)
-    damageInfo->CleanDamage(0, damageInfo->absorb, BASE_ATTACK, damageInfo->HitInfo & SPELL_HIT_TYPE_CRIT ? MELEE_HIT_CRIT : MELEE_HIT_NORMAL);
+    damageInfo->CleanDamage(0, damageInfo->GetAbsorb(), BASE_ATTACK, damageInfo->HitInfo & SPELL_HIT_TYPE_CRIT ? MELEE_HIT_CRIT : MELEE_HIT_NORMAL);
     damageInfo->damageType = SPELL_DIRECT_DAMAGE;
 
     DealDamage(pVictim, damageInfo, durabilityLoss);
@@ -2799,7 +2793,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
 
             splitdamageInfo.procVictim |= PROC_FLAG_TAKEN_ANY_DAMAGE;
 
-            if (splitdamageInfo.absorb)
+            if (splitdamageInfo.GetAbsorb())
                 splitdamageInfo.procEx |= PROC_EX_ABSORB;
 
             if (splitdamageInfo.damage == 0)
@@ -2809,8 +2803,8 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
 
             caster->ProcDamageAndSpellFor(true,&splitdamageInfo);
 
-            pCaster->SendSpellNonMeleeDamageLog(caster, (*i)->GetSpellProto()->Id, splitdamageInfo.damage, damageInfo->SchoolMask(), splitdamageInfo.absorb, 0, false, 0, false);
-            splitdamageInfo.cleanDamage = splitdamageInfo.damage - splitdamageInfo.absorb;
+            pCaster->SendSpellNonMeleeDamageLog(caster, (*i)->GetSpellProto()->Id, splitdamageInfo.damage, damageInfo->SchoolMask(), splitdamageInfo.GetAbsorb(), 0, false, 0, false);
+            splitdamageInfo.cleanDamage = splitdamageInfo.damage - splitdamageInfo.GetAbsorb();
             pCaster->DealDamage(caster, &splitdamageInfo, false);
         }
 
@@ -2840,7 +2834,7 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
 
             splitdamageInfo.procVictim |= PROC_FLAG_TAKEN_ANY_DAMAGE;
 
-            if (splitdamageInfo.absorb)
+            if (splitdamageInfo.GetAbsorb())
                 splitdamageInfo.procEx |= PROC_EX_ABSORB;
 
             if (splitdamageInfo.damage == 0)
@@ -2850,8 +2844,8 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
 
             caster->ProcDamageAndSpellFor(true,&splitdamageInfo);
 
-            pCaster->SendSpellNonMeleeDamageLog(caster, (*i)->GetSpellProto()->Id, splitdamageInfo.damage, damageInfo->SchoolMask(), splitdamageInfo.absorb, 0, false, 0, false);
-            splitdamageInfo.cleanDamage = splitdamageInfo.damage - splitdamageInfo.absorb;
+            pCaster->SendSpellNonMeleeDamageLog(caster, (*i)->GetSpellProto()->Id, splitdamageInfo.damage, damageInfo->SchoolMask(), splitdamageInfo.GetAbsorb(), 0, false, 0, false);
+            splitdamageInfo.cleanDamage = splitdamageInfo.damage - splitdamageInfo.GetAbsorb();
             pCaster->DealDamage(caster, &splitdamageInfo, false);
         }
     }
@@ -2896,10 +2890,10 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
 
     damageInfo->absorb = damageInfo->damage - damageInfo->resist - RemainingDamage - absorb_unaffected_damage;
 
-    if (damageInfo->absorb)
+    if (damageInfo->GetAbsorb())
     {
         damageInfo->procEx  |= PROC_EX_ABSORB;
-        damageInfo->HitInfo |= (damageInfo->damage <= damageInfo->absorb) ? HITINFO_ABSORB : HITINFO_PARTIAL_ABSORB;
+        damageInfo->HitInfo |= (damageInfo->damage <= damageInfo->GetAbsorb()) ? HITINFO_ABSORB : HITINFO_PARTIAL_ABSORB;
     }
 
     if (damageInfo->resist)
@@ -2908,14 +2902,14 @@ void Unit::CalculateDamageAbsorbAndResist(Unit* pCaster, DamageInfo* damageInfo,
         damageInfo->HitInfo |= (damageInfo->damage <= damageInfo->resist) ? HITINFO_RESIST : HITINFO_PARTIAL_RESIST;
     }
 
-    if (damageInfo->damage <= (damageInfo->absorb + damageInfo->resist))
+    if (damageInfo->damage <= (damageInfo->GetAbsorb() + damageInfo->resist))
     {
         damageInfo->damage = 0;
         damageInfo->procEx &= ~PROC_EX_DIRECT_DAMAGE;
     }
     else
     {
-        damageInfo->damage -= damageInfo->absorb + damageInfo->resist;
+        damageInfo->damage -= damageInfo->GetAbsorb() + damageInfo->resist;
         damageInfo->procEx |= PROC_EX_DIRECT_DAMAGE;
     }
 }
@@ -3062,7 +3056,7 @@ void Unit::AttackerStateUpdate(Unit* pVictim, WeaponAttackType attType, bool ext
     DealMeleeDamage(&damageInfo,true);
 
     DEBUG_FILTER_LOG(LOG_FILTER_COMBAT,"Unit::AttackerStateUpdate:  %s attacked %s  hit %u att %u for %u dmg, absorbed %u, blocked %u, resisted %u",
-        GetObjectGuid().GetString().c_str(), pVictim->GetObjectGuid().GetString().c_str(), hitInfo, attType, damageInfo.damage, damageInfo.absorb, damageInfo.blocked, damageInfo.resist);
+        GetObjectGuid().GetString().c_str(), pVictim->GetObjectGuid().GetString().c_str(), hitInfo, attType, damageInfo.damage, damageInfo.GetAbsorb(), damageInfo.blocked, damageInfo.resist);
 
     // if damage pVictim call AI reaction
     pVictim->AttackedBy(this);
@@ -6627,7 +6621,7 @@ void Unit::SendSpellNonMeleeDamageLog(DamageInfo *log)
     data << uint32(log->damage);                            // damage amount
     data << uint32(overkill);                               // overkill
     data << uint8 (log->SchoolMask());                      // damage school
-    data << uint32(log->absorb);                            // AbsorbedDamage
+    data << uint32(log->GetAbsorb());                       // AbsorbedDamage
     data << uint32(log->resist);                            // resist
     data << uint8 (log->physicalLog);                       // if 1, then client show spell name (example: %s's ranged shot hit %s for %u school or %s suffers %u school damage from %s's spell_name
     data << uint8 (log->unused);                            // unused
@@ -6640,7 +6634,7 @@ void Unit::SendSpellNonMeleeDamageLog(DamageInfo *log)
 void Unit::SendSpellNonMeleeDamageLog(Unit *target, uint32 SpellID, uint32 Damage, SpellSchoolMask damageSchoolMask, uint32 AbsorbedDamage, uint32 Resist, bool PhysicalDamage, uint32 Blocked, bool CriticalHit)
 {
     DamageInfo log(this, target, SpellID,(Damage - AbsorbedDamage - Resist - Blocked));
-    log.absorb = AbsorbedDamage;
+    log.SetAbsorb(AbsorbedDamage);
     log.resist = Resist;
     log.physicalLog = PhysicalDamage;
     log.blocked = Blocked;
@@ -6762,7 +6756,7 @@ void Unit::SendAttackStateUpdate(DamageInfo* damageInfo)
     if (damageInfo->HitInfo & (HITINFO_ABSORB | HITINFO_PARTIAL_ABSORB))
     {
         for(uint32 i = 0; i < count; ++i)
-            data << uint32(damageInfo->absorb);             // Absorb
+            data << uint32(damageInfo->GetAbsorb());             // Absorb
     }
 
     if (damageInfo->HitInfo & (HITINFO_RESIST | HITINFO_PARTIAL_RESIST))
@@ -7468,7 +7462,7 @@ void Unit::SetOwnerGuid(ObjectGuid ownerGuid)
 
     // Update owner dependent fields
     Player* pPlayer = ObjectMgr::GetPlayer(ownerGuid, true);
-    if (!pPlayer || !pPlayer->HaveAtClient(this)) // if player cannot see this unit yet, he will receive needed data with create object
+    if (!pPlayer || !pPlayer->HaveAtClient(GetObjectGuid())) // if player cannot see this unit yet, he will receive needed data with create object
         return;
 
     SetFieldNotifyFlag(UF_FLAG_OWNER);
@@ -7754,7 +7748,7 @@ void Unit::UnsummonAllTotems()
 int32 Unit::DealHeal(Unit* pVictim, uint32 addhealth, SpellEntry const* spellProto, bool critical, uint32 absorb)
 {
     DamageInfo healInfo = DamageInfo(this, pVictim, spellProto, addhealth);
-    healInfo.absorb = absorb;
+    healInfo.SetAbsorb(absorb);
     return DealHeal(&healInfo, critical);
 }
 
@@ -7774,7 +7768,7 @@ int32  Unit::DealHeal(DamageInfo* healInfo, bool critical/* = false*/)
         unit = GetOwner();
 
     // overheal = addhealth - gain
-    unit->SendHealSpellLog(pVictim, spellProto->Id, healInfo->heal, healInfo->heal - gain, critical, healInfo->absorb);
+    unit->SendHealSpellLog(pVictim, spellProto->Id, healInfo->heal, healInfo->heal - gain, critical, healInfo->GetAbsorb());
 
     if (unit->GetTypeId() == TYPEID_PLAYER)
     {
@@ -9907,7 +9901,7 @@ int32 Unit::ModifyHealth(int32 dVal)
         SetHealth(val);
         gain = val - curHealth;
     }
-    else if (curHealth != maxHealth)
+    else
     {
         SetHealth(maxHealth);
         gain = maxHealth - curHealth;
@@ -9939,7 +9933,7 @@ int32 Unit::ModifyPower(Powers power, int32 dVal)
         SetPower(power,val);
         gain = val - curPower;
     }
-    else if (curPower != maxPower)
+    else
     {
         SetPower(power,maxPower);
         gain = maxPower - curPower;
@@ -9950,23 +9944,17 @@ int32 Unit::ModifyPower(Powers power, int32 dVal)
 
 bool Unit::isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, bool detect, bool inVisibleList, bool is3dDistance, bool skipLOScheck) const
 {
-    if(!u || !IsInMap(u))
+    if (!u)
         return false;
 
     // Always can see self
-    if (u==this)
+    if (u == this)
         return true;
 
-    // player visible for other player if not logout and at same transport
-    // including case when player is out of world
-    bool at_same_transport =
-        GetTypeId() == TYPEID_PLAYER &&  u->GetTypeId()==TYPEID_PLAYER &&
-        !((Player*)this)->GetSession()->PlayerLogout() && !((Player*)u)->GetSession()->PlayerLogout() &&
-        !((Player*)this)->GetSession()->PlayerLoading() && !((Player*)u)->GetSession()->PlayerLoading() &&
-        ((Player*)this)->GetTransport() && ((Player*)this)->GetTransport() == ((Player*)u)->GetTransport();
+    bool at_same_transport = (IsBoarded() && (GetTransportInfo() == u->GetTransportInfo()));
 
     // not in world
-    if(!at_same_transport && (!IsInWorld() || !u->IsInWorld()))
+    if (!at_same_transport && (!IsInMap(u) || !IsInWorld() || !u->IsInWorld()))
         return false;
 
     // forbidden to seen (while Removing corpse)
@@ -9974,11 +9962,12 @@ bool Unit::isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, boo
         return false;
 
     Map& _map = *u->GetMap();
+
     // Grid dead/alive checks
-    if (u->GetTypeId()==TYPEID_PLAYER)
+    if (u->GetTypeId() == TYPEID_PLAYER)
     {
         // non visible at grid for any stealth state
-        if(!IsVisibleInGridForPlayer((Player *)u))
+        if (!IsVisibleInGridForPlayer((Player *)u))
             return false;
 
         // if player is dead then he can't detect anyone in any cases
@@ -9999,10 +9988,11 @@ bool Unit::isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, boo
         if (!IsWithinDistInMap(viewPoint,World::GetMaxVisibleDistanceInFlight()+(inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f), is3dDistance))
             return false;
     }
-    else if(!at_same_transport)                             // distance for show player/pet/creature (no transport case)
+    else if (!at_same_transport)                             // distance for show player/pet/creature (no transport case)
     {
         // Any units far than max visible distance for viewer or not in our map are not visible too
-        if (!IsWithinDistInMap(viewPoint, _map.GetVisibilityDistance() + (inVisibleList ? World::GetVisibleUnitGreyDistance() : 0.0f), is3dDistance))
+        // FIXME Visibility distance doubled for on-transport measurement
+        if (!IsWithinDistInMap(viewPoint, _map.GetVisibilityDistance() + (inVisibleList ? World::GetVisibleUnitGreyDistance() : 0.0f) + (IsBoarded() ? _map.GetVisibilityDistance() : 0.0f), is3dDistance))
             return false;
     }
 
@@ -10102,13 +10092,17 @@ bool Unit::isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, boo
     if (m_Visibility != VISIBILITY_GROUP_STEALTH)
         return true;
 
+    // Check same transport/vehicle before stealth check
+    if (IsBoarded() && GetTransportInfo() == u->GetTransportInfo())
+        return true;
+
     // NOW ONLY STEALTH CASE
 
     //if in non-detect mode then invisible for unit
     //mobs always detect players (detect == true)... return 'false' for those mobs which have (detect == false)
     //players detect players only in Player::HandleStealthedUnitsDetection()
     if (!detect)
-        return (u->GetTypeId() == TYPEID_PLAYER) ? ((Player*)u)->HaveAtClient(this) : false;
+        return (u->GetTypeId() == TYPEID_PLAYER) ? ((Player*)u)->HaveAtClient(GetObjectGuid()) : false;
 
     // Special cases
 
@@ -10626,7 +10620,8 @@ bool Unit::TauntApply(Unit* taunter, bool isSingleEffect)
     // Only attack taunter if this is a valid target
     if (!hasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_DIED) && !IsSecondChoiceTarget(taunter, true))
     {
-        SetInFront(taunter);
+        if (GetTargetGuid() || !target)
+            SetInFront(taunter);
 
         if (((Creature*)this)->AI())
             ((Creature*)this)->AI()->AttackStart(taunter);
@@ -10675,7 +10670,8 @@ void Unit::TauntFadeOut(Unit *taunter)
 
     if (target && target != taunter)
     {
-        SetInFront(target);
+        if (GetTargetGuid())
+            SetInFront(target);
 
         if (((Creature*)this)->AI())
             ((Creature*)this)->AI()->AttackStart(target);
@@ -10800,8 +10796,8 @@ bool Unit::SelectHostileTarget(bool withEvade)
                     // next iteration we will select next possible target
                     m_HostileRefManager->deleteReference(target);
                     m_ThreatManager.modifyThreatPercent(target, -101);
-
-                    GetMap()->RemoveAttackerFor(GetObjectGuid(),target->GetObjectGuid());
+                    // remove target from current attacker, do not exit combat settings
+                    AttackStop(true);
                 }
                 return false;
             }
@@ -12280,7 +12276,7 @@ uint32 createProcExtendMask(DamageInfo *damageInfo, SpellMissInfo missCondition)
         if (damageInfo->blocked)
             procEx|=PROC_EX_BLOCK;
         // On absorb
-        if (damageInfo->absorb)
+        if (damageInfo->GetAbsorb())
             procEx|=PROC_EX_ABSORB;
         // On crit
         if (damageInfo->HitInfo & SPELL_HIT_TYPE_CRIT)
@@ -12586,20 +12582,38 @@ void Unit::SendCharmState()
 
 ///----------End of Pet responses methods----------
 
-void Unit::StopMoving()
+void Unit::StopMoving(bool ignoreMoveState/*=false*/)
 {
+    if (IsStopped() && !ignoreMoveState)
+        return;
+
     clearUnitState(UNIT_STAT_MOVING);
 
     // not need send any packets if not in world
     if (!IsInWorld())
         return;
 
-    if (movespline->Finalized())
-        return;
-
     Movement::MoveSplineInit<Unit*> init(*this);
     init.SetFacing(GetOrientation());
     init.Launch();
+}
+
+void Unit::InterruptMoving(bool ignoreMoveState /*=false*/)
+{
+    if (!movespline)
+        return;
+
+    bool isMoving = false;
+
+    if (!movespline->Finalized())
+    {
+        Position loc = movespline->ComputePosition();
+        movespline->_Interrupt();
+        SetPosition(loc);
+        isMoving = true;
+    }
+
+    StopMoving(ignoreMoveState || isMoving);
 }
 
 void Unit::SetFeared(bool apply, ObjectGuid casterGuid, uint32 spellID, uint32 time)
@@ -13276,7 +13290,7 @@ void Unit::NearTeleportTo(WorldLocation const& loc, uint32 options)
     else
     {
         ExitVehicle(true);
-        GetMap()->Relocation((Creature*)this, loc.x, loc.y, loc.z, loc.orientation);
+        GetMap()->Relocation((Creature*)this, loc);
         SendHeartBeat();
     }
 }
@@ -13544,8 +13558,6 @@ void Unit::_EnterVehicle(VehicleKitPtr vehicle, int8 seatId)
     {
         if (GetTypeId() == TYPEID_PLAYER)
             pTransport->RemovePassenger((Player*)this);
-
-        SetTransport(NULL);
     }
 }
 
@@ -13560,6 +13572,7 @@ void Unit::_ExitVehicle(bool forceDismount)
         GetVehicle()->RemovePassenger(this, !forceDismount);
     else
     {
+        ClearTransportData();
         m_movementInfo.ClearTransportData();
         m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
     }
@@ -14200,15 +14213,15 @@ void Unit::UpdateSplineMovement(uint32 t_diff)
     if (m_movesplineTimer.Passed() || arrived)
     {
         m_movesplineTimer.Reset(sWorld.getConfig(CONFIG_UINT32_POSITION_UPDATE_DELAY));
-        Location loc = movespline->ComputePosition();
+        Position loc = movespline->ComputePosition();
 
         if (IsBoarded())
         {
-            m_movementInfo.ChangeTransportPosition(loc.x, loc.y, loc.z, loc.orientation);
-            GetTransportInfo()->SetLocalPosition(loc.x, loc.y, loc.z, loc.orientation);
+            m_movementInfo.ChangeTransportPosition(loc);
+            GetTransportInfo()->SetLocalPosition(loc);
         }
         else
-            SetPosition(loc.x,loc.y,loc.z,loc.orientation);
+            SetPosition(loc);
     }
 }
 

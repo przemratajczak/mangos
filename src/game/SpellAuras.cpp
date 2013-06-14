@@ -1680,7 +1680,7 @@ void Aura::TriggerSpell()
                     case 31347:                             // Doom
                     {
                         target->CastSpell(target,31350,true);
-                        target->DealDamage(target, target->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                        target->KillSelf();
                         return;
                     }
                     case 31373:                             // Spellcloth
@@ -2006,16 +2006,16 @@ void Aura::TriggerSpell()
 //                    case 67546: break;
                     case 69012:                             // Explosive Barrage - Krick and Ick
                     {
-                       // Summon an Exploding Orb for each player in combat with the caster 
-                        ThreatList const& threatList = target->getThreatManager().getThreatList(); 
-                        for (ThreatList::const_iterator itr = threatList.begin(); itr != threatList.end(); ++itr) 
-                        { 
-                            if (Unit* expectedTarget = target->GetMap()->GetUnit((*itr)->getUnitGuid())) 
-                            { 
-                                if (expectedTarget->GetTypeId() == TYPEID_PLAYER) 
-                                    target->CastSpell(expectedTarget, 69015, true); 
-                            } 
-                        } 
+                       // Summon an Exploding Orb for each player in combat with the caster
+                        ThreatList const& threatList = target->getThreatManager().getThreatList();
+                        for (ThreatList::const_iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
+                        {
+                            if (Unit* expectedTarget = target->GetMap()->GetUnit((*itr)->getUnitGuid()))
+                            {
+                                if (expectedTarget->GetTypeId() == TYPEID_PLAYER)
+                                    target->CastSpell(expectedTarget, 69015, true);
+                            }
+                        }
                         return;
                     }
                     case 70017:                             // Gunship Cannon Fire
@@ -3234,7 +3234,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
             {
                 // Kill target if dispelled
                 if (m_removeMode==AURA_REMOVE_BY_DISPEL)
-                    target->DealDamage(target, target->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                    target->KillSelf();
                 return;
             }
             case 45963:                                     // Call Alliance Deserter
@@ -6501,7 +6501,7 @@ void Aura::HandleAuraPeriodicDummy(bool apply, bool Real)
                     if (GetHolder()->GetStackAmount() > 11)
                     {
                         target->CastSpell(target, 64219, true);
-                        target->DealDamage(target, target->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                        target->KillSelf();
                     }
                     return;
                 }

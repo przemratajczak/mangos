@@ -443,7 +443,7 @@ void Spell::EffectSchoolDMG(SpellEffectIndex effect_idx)
                         if (unitTarget->GetEntry() == 26125 && (unitTarget->GetObjectGuid() == m_caster->GetObjectGuid()))
                         {
                             // After explode the ghoul must be killed
-                            unitTarget->DealDamage(unitTarget, unitTarget->GetMaxHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                            unitTarget->KillSelf();
                         }
                         break;
                     }
@@ -2275,6 +2275,24 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     unitTarget->CastSpell(m_caster, 45456, true);
                     break;
                 }
+                case 45536:                                // Complete Ancestor Ritual, KillCredit for (Q:11610)
+                {
+                    if (!gameObjTarget || m_caster->GetTypeId() != TYPEID_PLAYER)
+                        return;
+
+                    uint32 killCredit;
+                    switch (gameObjTarget->GetEntry())
+                    {
+                        case 191088: killCredit = 25397; break;
+                        case 191089: killCredit = 25398; break;
+                        case 191090: killCredit = 25399; break;
+                        default:
+                            return;
+                    }
+
+                    ((Player*)m_caster)->KilledMonsterCredit(killCredit);
+                    return;
+                }
                 case 45583:                                 // Throw Gnomish Grenade
                 {
                     if (!unitTarget || m_caster->GetTypeId() != TYPEID_PLAYER)
@@ -3213,7 +3231,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     if (!unitTarget)
                         return;
 
-                    m_caster->DealDamage(unitTarget, unitTarget->GetMaxHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                    unitTarget->KillSelf();
                     return;
                 }
                 case 54250:                                 // Skull Missile - Drakuru Overlord
@@ -3508,7 +3526,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                         return;
 
                     if (unitTarget->HasAura(64162))
-                        unitTarget->DealDamage(unitTarget, unitTarget->GetMaxHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                        unitTarget->KillSelf();
                     return;
                 }
                 case 64385:                                 // Spinning (from Unusual Compass)
@@ -6330,7 +6348,7 @@ void Spell::EffectSummonType(SpellEffectIndex eff_idx)
 
     uint32 factionId = summon_prop->FactionId ? summon_prop->FactionId :
                         // Else set faction to summoner's faction for pet-like summoned
-                        ((summon_prop->Flags & SUMMON_PROP_FLAG_INHERIT_FACTION) ? 
+                        ((summon_prop->Flags & SUMMON_PROP_FLAG_INHERIT_FACTION) ?
                         (responsibleCaster ? responsibleCaster->getFaction() : m_caster->getFaction()) :
                         // else auto faction detect
                         0);

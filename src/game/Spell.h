@@ -439,8 +439,8 @@ class Spell
 
         typedef std::list<Unit*> UnitList;
         void FillTargetMap();
-        bool FillCustomTargetMap(SpellEffectIndex effIndex, UnitList &targetUnitMap);
-        void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList &targetUnitMap);
+        bool FillCustomTargetMap(SpellEffectIndex effIndex, UnitList& targetUnitMap, uint8& effToIndex);
+        void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList& targetUnitMap);
 
         void FillAreaTargets(UnitList &targetUnitMap, float radius, SpellNotifyPushType pushType, SpellTargets spellTargets, WorldObject* originalCaster = NULL);
         void FillRaidOrPartyTargets(UnitList &targetUnitMap, Unit* member, Unit* center, float radius, bool raid, bool withPets, bool withcaster);
@@ -452,8 +452,9 @@ class Spell
 
         template<typename T> WorldObject* FindCorpseUsing(uint32 corpseTypeMask);
 
-        bool CheckTarget( Unit* target, SpellEffectIndex eff );
-        bool CheckTargetBeforeLimitation(Unit* target, SpellEffectIndex eff);
+        template<class T> bool CheckTarget(T* target, SpellEffectIndex eff);
+        template<class T> bool CheckTargetBeforeLimitation(T* target, SpellEffectIndex eff);
+
         SpellCastResult CanAutoCast(Unit* target);
 
         static void MANGOS_DLL_SPEC SendCastResult(Player* caster, SpellEntry const* spellInfo, uint8 cast_count, SpellCastResult result, bool isPetCastResult = false);
@@ -521,8 +522,8 @@ class Spell
         // real source of cast affects, explicit caster, or DoT/HoT applier, or GO owner, or wild GO itself. Can be NULL
         WorldObject* GetAffectiveCasterObject() const;
         // limited version returning NULL in cases wild gameobject caster object, need for Aura (auras currently not support non-Unit caster)
-        Unit* GetAffectiveCaster() const { return m_originalCasterGUID ? m_originalCaster : m_caster; }
-        // m_originalCasterGUID can store GO guid, and in this case this is visual caster
+        Unit* GetAffectiveCaster() const { return m_originalCasterGuid ? m_originalCaster : m_caster; }
+        // m_originalCasterGuid can store GO guid, and in this case this is visual caster
         WorldObject* GetCastingObject() const;
 
         // Unstead of GetAffectiveCaster() not return NULL if original caster is GameObject.
@@ -532,12 +533,15 @@ class Spell
 
         void UpdatePointers();                              // must be used at call Spell code after time delay (non triggered spell cast/update spell call/etc)
 
-        void AddTriggeredSpell(SpellEntry const* spellInfo) { m_TriggerSpells.push_back(spellInfo); }
         void AddPrecastSpell(SpellEntry const* spellInfo) { m_preCastSpells.push_back(spellInfo); }
-        void AddTriggeredSpell(uint32 spellId);
+        void AddTriggeredSpell(SpellEntry const* spellInfo) { m_TriggerSpells.push_back(spellInfo); }
+        void AddNotTriggeredSpell(SpellEntry const* spellInfo) { m_NotTriggerSpells.push_back(spellInfo); }
         void AddPrecastSpell(uint32 spellId);
+        void AddTriggeredSpell(uint32 spellId);
+        void AddNotTriggeredSpell(uint32 spellId);
         void CastPreCastSpells(Unit* target);
         void CastTriggerSpells();
+        void CastNotTriggerSpells();
 
         void CleanupTargetList();
         void ClearCastItem();
@@ -555,7 +559,7 @@ class Spell
 
         Unit* m_caster;
 
-        ObjectGuid m_originalCasterGUID;                    // real source of cast (aura caster/etc), used for spell targets selection
+        ObjectGuid m_originalCasterGuid;                    // real source of cast (aura caster/etc), used for spell targets selection
                                                             // e.g. damage around area spell trigered by victim aura and da,age emeies of aura caster
         Unit* m_originalCaster;                             // cached pointer for m_originalCaster, updated at Spell::UpdatePointers()
 
@@ -679,8 +683,9 @@ class Spell
 
         //List For Triggered Spells
         typedef std::list<SpellEntry const*> SpellInfoList;
-        SpellInfoList m_TriggerSpells;                      // casted by caster to same targets settings in m_targets at success finish of current spell
         SpellInfoList m_preCastSpells;                      // casted by caster to each target at spell hit before spell effects apply
+        SpellInfoList m_TriggerSpells;                      // casted by caster to same targets settings in m_targets at success finish of current spell
+        SpellInfoList m_NotTriggerSpells;                   // casted not triggered by caster to same targets settings in m_targets at success finish of current spell
 
         uint32 m_spellState;
         uint32 m_timer;

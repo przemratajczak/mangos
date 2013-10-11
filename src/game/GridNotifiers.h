@@ -36,10 +36,10 @@ namespace MaNGOS
     {
         Camera& i_camera;
         UpdateData i_data;
-        GuidSet i_clientGUIDs;
+        GuidSet i_clientGuids;
         WorldObjectSet i_visibleNow;
 
-        explicit VisibleNotifier(Camera& c) : i_camera(c), i_clientGUIDs(c.GetOwner()->GetClientGuids()) {}
+        explicit VisibleNotifier(Camera& c) : i_camera(c), i_clientGuids(c.GetOwner()->GetClientGuids()) {}
         template<class T> void Visit(GridRefManager<T>& m);
         void Visit(CameraMapType& /*m*/) {}
         void Notify(void);
@@ -56,10 +56,10 @@ namespace MaNGOS
 
     struct MANGOS_DLL_DECL MessageDeliverer
     {
-        Player& i_player;
+        Player const& i_player;
         WorldPacket* i_message;
         bool i_toSelf;
-        MessageDeliverer(Player& pl, WorldPacket* msg, bool to_self) : i_player(pl), i_message(msg), i_toSelf(to_self) {}
+        MessageDeliverer(Player const& pl, WorldPacket* msg, bool to_self) : i_player(pl), i_message(msg), i_toSelf(to_self) {}
         void Visit(CameraMapType& m);
         template<class SKIP> void Visit(GridRefManager<SKIP>&) {}
     };
@@ -81,7 +81,7 @@ namespace MaNGOS
     {
         uint32 i_phaseMask;
         WorldPacket* i_message;
-        explicit ObjectMessageDeliverer(WorldObject& obj, WorldPacket* msg)
+        explicit ObjectMessageDeliverer(WorldObject const& obj, WorldPacket* msg)
             : i_phaseMask(obj.GetPhaseMask()), i_message(msg) {}
         void Visit(CameraMapType& m);
         template<class SKIP> void Visit(GridRefManager<SKIP>&) {}
@@ -89,13 +89,13 @@ namespace MaNGOS
 
     struct MANGOS_DLL_DECL MessageDistDeliverer
     {
-        Player& i_player;
+        Player const& i_player;
         WorldPacket* i_message;
         bool i_toSelf;
         bool i_ownTeamOnly;
         float i_dist;
 
-        MessageDistDeliverer(Player& pl, WorldPacket* msg, float dist, bool to_self, bool ownTeamOnly)
+        MessageDistDeliverer(Player const& pl, WorldPacket* msg, float dist, bool to_self, bool ownTeamOnly)
             : i_player(pl), i_message(msg), i_toSelf(to_self), i_ownTeamOnly(ownTeamOnly), i_dist(dist) {}
         void Visit(CameraMapType& m);
         template<class SKIP> void Visit(GridRefManager<SKIP>&) {}
@@ -103,10 +103,10 @@ namespace MaNGOS
 
     struct MANGOS_DLL_DECL ObjectMessageDistDeliverer
     {
-        WorldObject& i_object;
+        WorldObject const& i_object;
         WorldPacket* i_message;
         float i_dist;
-        ObjectMessageDistDeliverer(WorldObject& obj, WorldPacket* msg, float dist) : i_object(obj), i_message(msg), i_dist(dist) {}
+        ObjectMessageDistDeliverer(WorldObject const& obj, WorldPacket* msg, float dist) : i_object(obj), i_message(msg), i_dist(dist) {}
         void Visit(CameraMapType& m);
         template<class SKIP> void Visit(GridRefManager<SKIP>&) {}
     };
@@ -546,7 +546,7 @@ namespace MaNGOS
             WorldObject const& GetFocusObject() const { return *i_fobj; }
             bool operator()(Player* u)
             {
-                if (u->isAlive() || u->IsTaxiFlying())
+                if (!u->IsInWorld() || u->isAlive() || u->IsTaxiFlying())
                     return false;
 
                 if (i_fobj->IsWithinDistInMap(u, i_range))
@@ -559,7 +559,7 @@ namespace MaNGOS
             bool operator()(Corpse* u);
             bool operator()(Creature* u)
             {
-                if (u->isAlive() || u->IsDeadByDefault() ||
+                if (!u->IsInWorld() || u->isAlive() || u->IsDeadByDefault() ||
                    ((i_typeMask && !(u->GetCreatureTypeMask() & i_typeMask)) ||
                    (i_typeMask == CREATURE_TYPEMASK_NONE && !(u->GetCreatureTypeMask() & CREATURE_TYPEMASK_HUMANOID_OR_UNDEAD))))
                     return false;
@@ -940,15 +940,15 @@ namespace MaNGOS
     class NearestAttackableUnitInObjectRangeCheck
     {
         public:
-            NearestAttackableUnitInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) 
+            NearestAttackableUnitInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range)
             {
                 i_targetForPlayer = i_obj->IsControlledByPlayer();
             }
             WorldObject const& GetFocusObject() const { return *i_obj; }
             bool operator()(Unit* u)
             {
-                if (u->isTargetableForAttack() 
-                    && i_obj->IsWithinDistInMap(u, i_range) 
+                if (u->isTargetableForAttack()
+                    && i_obj->IsWithinDistInMap(u, i_range)
                     && (i_targetForPlayer ? !i_obj->IsFriendlyTo(u) : i_obj->IsHostileTo(u))
                     && (i_obj->GetTypeId() != TYPEID_UNIT || u->isVisibleForOrDetect((Unit*)i_obj, (Unit*)i_obj, false)))
                 {

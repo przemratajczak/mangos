@@ -208,7 +208,7 @@ void Totem::SetTypeBySummonSpell(SpellEntry const * spellProto)
         if(totemSpell->Id == 40132 || totemSpell->Id == 40133)
             m_type = TOTEM_PASSIVE;                             // Shaman summoning totems
     }
-    if(spellProto->SpellIconID == 2056)
+    if(spellProto->GetSpellIconID() == 2056)
         m_type = TOTEM_STATUE;                              //Jewelery statue
 
 }
@@ -244,4 +244,14 @@ bool Totem::IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex 
     }
 
     return Creature::IsImmuneToSpellEffect(spellInfo, index);
+}
+
+uint32 Totem::GetCreatureTypeMask() const
+{
+
+    // skip creature type check for Grounding Totem
+    if (GetUInt32Value(UNIT_CREATED_BY_SPELL) == 8177)
+        return 0x7FF;
+
+    return Unit::GetCreatureTypeMask();
 }

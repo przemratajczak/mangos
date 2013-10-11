@@ -248,7 +248,7 @@ inline bool IsSpellRemoveAllMovementAndControlLossEffects(SpellEntry const* spel
         spellProto->EffectApplyAuraName[EFFECT_INDEX_1] == 0 &&
         spellProto->EffectApplyAuraName[EFFECT_INDEX_2] == 0 &&
         spellProto->HasAttribute(SPELL_ATTR_EX_DISPEL_AURAS_ON_IMMUNITY)/* && -- all above selected spells have SPELL_ATTR_EX5_* mask
-        ((spellProto->AttributesEx5 &
+        ((spellProto->GetAttributesEx5() &
             (SPELL_ATTR_EX5_USABLE_WHILE_CONFUSED|SPELL_ATTR_EX5_USABLE_WHILE_FEARED|SPELL_ATTR_EX5_USABLE_WHILE_STUNNED)) ==
             (SPELL_ATTR_EX5_USABLE_WHILE_CONFUSED|SPELL_ATTR_EX5_USABLE_WHILE_FEARED|SPELL_ATTR_EX5_USABLE_WHILE_STUNNED))*/;
 }
@@ -313,7 +313,7 @@ bool IsSingleTargetSpells(SpellEntry const *spellInfo1, SpellEntry const *spellI
 
 inline bool IsCasterSourceTarget(uint32 target)
 {
-    switch (target )
+    switch (target)
     {
         case TARGET_SELF:
         case TARGET_PET:
@@ -345,22 +345,44 @@ inline bool IsCasterSourceTarget(uint32 target)
     return false;
 }
 
+inline bool IsCasterSourceAuraTarget(uint32 target)
+{
+    switch (target)
+    {
+        // Minimal set. Possible additional targets here.
+        case TARGET_SELF:
+        case TARGET_SINGLE_FRIEND:
+        case TARGET_SINGLE_FRIEND_2:
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
 inline bool IsSpellWithCasterSourceTargetsOnly(SpellEntry const* spellInfo)
 {
-    for(int i = 0; i < MAX_EFFECT_INDEX; ++i)
+
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
         if (spellInfo->Effect[i] == SPELL_EFFECT_NONE)
             continue;
 
-        uint32 targetA = spellInfo->EffectImplicitTargetA[i];
-        if (targetA && !IsCasterSourceTarget(targetA))
+        // All those spells - selfcasted in 3.3.5a (but not all has  standart targets set)
+        if (spellInfo->HasAttribute(SPELL_ATTR_PASSIVE) && 
+            spellInfo->HasAttribute(SPELL_ATTR_HIDDEN_CLIENTSIDE) &&
+            IsAuraApplyEffect(spellInfo, SpellEffectIndex(i)) &&
+            IsCasterSourceAuraTarget(spellInfo->GetEffectImplicitTargetAByIndex(SpellEffectIndex(i))))
+            continue;
+
+        if (((spellInfo->GetEffectImplicitTargetAByIndex(SpellEffectIndex(i)) != TARGET_NONE) && 
+                !IsCasterSourceTarget(spellInfo->GetEffectImplicitTargetAByIndex(SpellEffectIndex(i)))) ||
+            ((spellInfo->GetEffectImplicitTargetBByIndex(SpellEffectIndex(i)) != TARGET_NONE) && 
+                !IsCasterSourceTarget(spellInfo->GetEffectImplicitTargetBByIndex(SpellEffectIndex(i)))))
             return false;
 
-        uint32 targetB = spellInfo->EffectImplicitTargetB[i];
-        if (targetB && !IsCasterSourceTarget(targetB))
-            return false;
-
-        if(!targetA && !targetB)
+        if (spellInfo->GetEffectImplicitTargetAByIndex(SpellEffectIndex(i)) == TARGET_NONE && 
+            spellInfo->GetEffectImplicitTargetBByIndex(SpellEffectIndex(i)) == TARGET_NONE)
             return false;
     }
     return true;
@@ -399,7 +421,7 @@ inline bool IsEffectRequiresTarget(SpellEntry const* spellInfo, SpellEffectIndex
         case SPELL_EFFECT_NONE:
             return false;
 
-        // this - hack for current mangos operate state with spells    
+        // this - hack for current mangos operate state with spells
         case SPELL_EFFECT_DUMMY:
             break;
 
@@ -624,7 +646,7 @@ inline bool NeedsComboPoints(SpellEntry const* spellInfo)
 
 inline SpellSchoolMask GetSpellSchoolMask(SpellEntry const* spellInfo)
 {
-    return spellInfo ? SpellSchoolMask(spellInfo->SchoolMask) : SPELL_SCHOOL_MASK_NORMAL;
+    return spellInfo ? SpellSchoolMask(spellInfo->GetSchoolMask()) : SPELL_SCHOOL_MASK_NORMAL;
 }
 
 inline uint32 GetSpellMechanicMask(SpellEntry const* spellInfo, uint32 effectMask)
@@ -665,7 +687,7 @@ inline Mechanics GetEffectMechanic(SpellEntry const* spellInfo, SpellEffectIndex
     return MECHANIC_NONE;
 }
 
-inline bool IsBinaryResistedSpell(SpellEntry const* spellInfo) 
+inline bool IsBinaryResistedSpell(SpellEntry const* spellInfo)
 {
     if (!spellInfo)
         return false;
@@ -674,7 +696,7 @@ inline bool IsBinaryResistedSpell(SpellEntry const* spellInfo)
             spellInfo->HasAttribute(SPELL_ATTR_EX6_EXPLICIT_NO_BINARY_RESIST) ||
             spellInfo->HasAttribute(SPELL_ATTR_UNAFFECTED_BY_INVULNERABILITY) || //???
             spellInfo->HasAttribute(SPELL_ATTR_EX4_IGNORE_RESISTANCES) ||
-           (spellInfo->SchoolMask & SPELL_SCHOOL_MASK_NORMAL) ||
+           (spellInfo->GetSchoolMask() & SPELL_SCHOOL_MASK_NORMAL) ||
             spellInfo->HasAttribute(SPELL_ATTR_EX3_CANT_MISS))
         return false;
 
@@ -976,6 +998,7 @@ enum SpellLinkedType
     SPELL_LINKED_TYPE_CASTONREMOVE      = 8,
     SPELL_LINKED_TYPE_SCRIPTEFFECT      = 9,
     SPELL_LINKED_TYPE_DUMMYEFFECT       = 10,
+    SPELL_LINKED_TYPE_NOT_TRIGGERED     = 11,
     SPELL_LINKED_TYPE_MAX,
 };
 

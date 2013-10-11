@@ -460,6 +460,7 @@ Player::Player (WorldSession *session): Unit(), m_mover(this), m_camera(NULL), m
 
     m_DailyQuestChanged = false;
     m_WeeklyQuestChanged = false;
+    m_MonthlyQuestChanged = false;
 
     m_lastLiquid = NULL;
 
@@ -591,7 +592,10 @@ Player::~Player ()
 
     // Clear chache need only if player true loaded, not in broken state
     if (m_uint32Values && !GetObjectGuid().IsEmpty())
+    {
         sAccountMgr.ClearPlayerDataCache(GetObjectGuid());
+        sMapPersistentStateMgr.AddToUnbindQueue(GetObjectGuid());
+    }
 
     // Note: buy back item already deleted from DB when player was saved
     for (int i = 0; i < PLAYER_SLOTS_COUNT; ++i)
@@ -625,11 +629,6 @@ Player::~Player ()
     for (size_t x = 0; x < ItemSetEff.size(); x++)
         if (ItemSetEff[x])
             delete ItemSetEff[x];
-
-    // clean up player-instance binds, may unload some instance saves
-    for (uint8 i = 0; i < MAX_DIFFICULTY; ++i)
-        for (BoundInstancesMap::iterator itr = m_boundInstances[i].begin(); itr != m_boundInstances[i].end(); ++itr)
-            itr->second.state->RemovePlayer(this);
 
     delete m_declinedname;
     delete m_runes;
@@ -2140,6 +2139,20 @@ void Player::RemoveFromWorld(bool remove)
         GetCamera()->ResetView();
 
     Unit::RemoveFromWorld(remove);
+}
+
+void Player::SetMap(Map* map)
+{
+    WorldObject::SetMap(map);
+    // Lock map from unload while player on his
+    m_mapPtr = sMapMgr.GetMapPtr(map->GetId(), map->GetInstanceId());
+}
+
+void Player::ResetMap()
+{
+    WorldObject::ResetMap();
+    // Unlock map
+    m_mapPtr = MapPtr();
 }
 
 void Player::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
@@ -6308,7 +6321,7 @@ void Player::SaveRecallPosition()
     m_recall = GetPosition();
 }
 
-void Player::SendMessageToSet(WorldPacket *data, bool self)
+void Player::SendMessageToSet(WorldPacket* data, bool self) const
 {
     if (IsInWorld())
         GetMap()->MessageBroadcast(this, data, false);
@@ -6319,7 +6332,7 @@ void Player::SendMessageToSet(WorldPacket *data, bool self)
         GetSession()->SendPacket(data);
 }
 
-void Player::SendMessageToSetInRange(WorldPacket *data, float dist, bool self)
+void Player::SendMessageToSetInRange(WorldPacket* data, float dist, bool self) const
 {
     if (IsInWorld())
         GetMap()->MessageDistBroadcast(this, data, dist, false);
@@ -6328,7 +6341,7 @@ void Player::SendMessageToSetInRange(WorldPacket *data, float dist, bool self)
         GetSession()->SendPacket(data);
 }
 
-void Player::SendMessageToSetInRange(WorldPacket *data, float dist, bool self, bool own_team_only)
+void Player::SendMessageToSetInRange(WorldPacket* data, float dist, bool self, bool own_team_only) const
 {
     if (IsInWorld())
         GetMap()->MessageDistBroadcast(this, data, dist, false, own_team_only);
@@ -6337,7 +6350,7 @@ void Player::SendMessageToSetInRange(WorldPacket *data, float dist, bool self, b
         GetSession()->SendPacket(data);
 }
 
-void Player::SendDirectMessage(WorldPacket *data)
+void Player::SendDirectMessage(WorldPacket* data) const
 {
     GetSession()->SendPacket(data);
 }
@@ -13608,7 +13621,7 @@ uint32 Player::GetDefaultGossipMenuForSource(WorldObject *pSource)
     if (pSource->GetTypeId() == TYPEID_UNIT)
         return ((Creature*)pSource)->GetCreatureInfo()->GossipMenuId;
     else if (pSource->GetTypeId() == TYPEID_GAMEOBJECT)
-        return((GameObject*)pSource)->GetGOInfo()->GetGossipMenuId();
+        return ((GameObject*)pSource)->GetGOInfo()->GetGossipMenuId();
 
     return 0;
 }
@@ -13810,7 +13823,12 @@ Quest const* Player::GetNextQuest(ObjectGuid guid, Quest const *pQuest)
     return NULL;
 }
 
-bool Player::CanSeeStartQuest(Quest const *pQuest) const
+/**
+ * Check if a player could see a start quest
+ * Basic Quest-taking requirements: Class, Race, Skill, Quest-Line, ...
+ * Check if the quest-level is not too high (related config value CONFIG_INT32_QUEST_HIGH_LEVEL_HIDE_DIFF)
+ */
+bool Player::CanSeeStartQuest(Quest const* pQuest) const
 {
     if (SatisfyQuestClass(pQuest, false) && SatisfyQuestRace(pQuest, false) && SatisfyQuestSkill(pQuest, false) &&
         SatisfyQuestExclusiveGroup(pQuest, false) && SatisfyQuestReputation(pQuest, false) &&
@@ -13819,7 +13837,10 @@ bool Player::CanSeeStartQuest(Quest const *pQuest) const
         SatisfyQuestMonth(pQuest, false) &&
         pQuest->IsActive())
     {
-        return int32(getLevel()) + sWorld.getConfig(CONFIG_INT32_QUEST_HIGH_LEVEL_HIDE_DIFF) >= int32(pQuest->GetMinLevel());
+        int32 highLevelDiff = sWorld.getConfig(CONFIG_INT32_QUEST_HIGH_LEVEL_HIDE_DIFF);
+        if (highLevelDiff < 0)
+            return true;
+        return getLevel() + uint32(highLevelDiff) >= pQuest->GetMinLevel();
     }
 
     return false;
@@ -17384,7 +17405,7 @@ void Player::UnbindInstance(BoundInstancesMap::iterator &itr, Difficulty difficu
 
         sCalendarMgr.SendCalendarRaidLockoutRemove(GetObjectGuid(), itr->second.state);
 
-        itr->second.state->RemovePlayer(this);              // state can become invalid
+        itr->second.state->RemoveFromBindList(GetObjectGuid());  // state can become invalid
         m_boundInstances[difficulty].erase(itr++);
     }
 }
@@ -17413,8 +17434,9 @@ InstancePlayerBind* Player::BindToInstance(DungeonPersistentState *state, bool p
         if (bind.state != state)
         {
             if (bind.state)
-                bind.state->RemovePlayer(this);
-            state->AddPlayer(this);
+                bind.state->RemoveFromBindList(GetObjectGuid());
+
+            state->AddToBindList(GetObjectGuid());
         }
 
         if (permanent)
@@ -17705,10 +17727,10 @@ void Player::SaveToDB()
     {
         uberInsert.addUInt32(GetTeleportDest().GetMapId());
         uberInsert.addUInt32(GetDifficulty());
-        uberInsert.addFloat(finiteAlways(GetTeleportDest().x));
-        uberInsert.addFloat(finiteAlways(GetTeleportDest().y));
-        uberInsert.addFloat(finiteAlways(GetTeleportDest().z));
-        uberInsert.addFloat(finiteAlways(GetTeleportDest().orientation));
+        uberInsert.addFloat(finiteAlways(GetTeleportDest().getX()));
+        uberInsert.addFloat(finiteAlways(GetTeleportDest().getY()));
+        uberInsert.addFloat(finiteAlways(GetTeleportDest().getZ()));
+        uberInsert.addFloat(finiteAlways(GetTeleportDest().getO()));
     }
 
     std::ostringstream ss;
@@ -18771,7 +18793,7 @@ void Player::ResetInstances(InstanceResetMethod method, bool isRaid)
         m_boundInstances[diff].erase(itr++);
 
         // the following should remove the instance save from the manager and delete it as well
-        state->RemovePlayer(this);
+        state->RemoveFromBindList(GetObjectGuid());
     }
 }
 
@@ -18821,7 +18843,8 @@ void Player::UpdatePvPFlag(time_t currTime)
 {
     if (!IsPvP())
         return;
-    if (pvpInfo.endTimer == 0 || currTime < (pvpInfo.endTimer + 300))
+
+    if (pvpInfo.endTimer == 0 || currTime < (pvpInfo.endTimer + 300) || pvpInfo.inHostileArea)
         return;
 
     UpdatePvP(false);
@@ -18843,12 +18866,12 @@ void Player::UpdateDuelFlag(time_t currTime)
 
 void Player::RemovePet(PetSaveMode mode)
 {
-    GroupPetList groupPets = GetPets();
-    if (!groupPets.empty())
+    GuidSet groupPetsCopy = GetPets();
+    if (!groupPetsCopy.empty())
     {
-        for (GroupPetList::const_iterator itr = groupPets.begin(); itr != groupPets.end(); ++itr)
-             if (Pet* _pet = GetMap()->GetPet(*itr))
-                 _pet->Unsummon(mode, this);
+        for (GuidSet::const_iterator itr = groupPetsCopy.begin(); itr != groupPetsCopy.end(); ++itr)
+             if (Pet* pPet = GetMap()->GetPet(*itr))
+                 pPet->Unsummon(mode, this);
     }
 }
 
@@ -18993,12 +19016,12 @@ void Player::PetSpellInitialize()
 
 void Player::SendPetGUIDs()
 {
-    GroupPetList m_groupPets = GetPets();
-    WorldPacket data(SMSG_PET_GUIDS, 4+8*m_groupPets.size());
-    data << uint32(m_groupPets.size());                      // count
-    if (!m_groupPets.empty())
+    GuidSet const& groupPets = GetPets();
+    WorldPacket data(SMSG_PET_GUIDS, 4 + 8 * groupPets.size());
+    data << uint32(groupPets.size());                      // count
+    if (!groupPets.empty())
     {
-        for (GroupPetList::const_iterator itr = m_groupPets.begin(); itr != m_groupPets.end(); ++itr)
+        for (GuidSet::const_iterator itr = groupPets.begin(); itr != groupPets.end(); ++itr)
             data << (*itr);
     }
     GetSession()->SendPacket(&data);
@@ -20437,7 +20460,7 @@ bool Player::IsVisibleGloballyFor(Player* u) const
 
 bool Player::HaveAtClient(ObjectGuid const& guid) const
 {
-    return  guid == GetObjectGuid() || 
+    return  guid == GetObjectGuid() ||
             (IsBoarded() && GetTransportInfo()->GetTransportGuid() == guid) ||
             HasClientGuid(guid);
 }
@@ -21477,7 +21500,7 @@ uint32 Player::GetResurrectionSpellId()
     for (AuraList::const_iterator itr = dummyAuras.begin(); itr != dummyAuras.end(); ++itr)
     {
         // Soulstone Resurrection                           // prio: 3 (max, non death persistent)
-        if (prio < 2 && (*itr)->GetSpellProto()->SpellVisual[0] == 99 && (*itr)->GetSpellProto()->SpellIconID == 92)
+        if (prio < 2 && (*itr)->GetSpellProto()->GetSpellVisual() == 99 && (*itr)->GetSpellProto()->GetSpellIconID() == 92)
         {
             switch((*itr)->GetId())
             {
@@ -21824,30 +21847,28 @@ void Player::SendCorpseReclaimDelay(bool load)
     GetSession()->SendPacket(&data);
 }
 
-Player* Player::GetNextRandomRaidMember(float radius)
+Player* Player::GetNextRandomRaidMember(float radius, bool onlyAlive)
 {
-    Group *pGroup = GetGroup();
+    Group* pGroup = GetGroup();
     if (!pGroup)
         return NULL;
 
     std::vector<Player*> nearMembers;
     nearMembers.reserve(pGroup->GetMembersCount());
 
-    for (GroupReference *itr = pGroup->GetFirstMember(); itr != NULL; itr = itr->next())
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != NULL; itr = itr->next())
     {
-        Player* Target = itr->getSource();
+        Player* pMember = itr->getSource();
 
         // IsHostileTo check duel and controlled by enemy
-        if (Target && Target != this && IsWithinDistInMap(Target, radius) &&
-            !Target->HasInvisibilityAura() && !IsHostileTo(Target))
-            nearMembers.push_back(Target);
+        if (pMember && pMember != this &&
+            (!onlyAlive || pMember->isAlive()) &&
+            IsWithinDistInMap(pMember, radius) &&
+            !pMember->HasInvisibilityAura() && !IsHostileTo(pMember))
+            nearMembers.push_back(pMember);
     }
 
-    if (nearMembers.empty())
-        return NULL;
-
-    uint32 randTarget = urand(0,nearMembers.size()-1);
-    return nearMembers[randTarget];
+    return nearMembers.empty() ? NULL : nearMembers[urand(0, nearMembers.size() - 1)];
 }
 
 PartyResult Player::CanUninviteFromGroup() const
@@ -22985,11 +23006,11 @@ void Player::UnsummonPetTemporaryIfAny(bool full)
     if (!petmap)
         return;
 
-    GroupPetList m_groupPetsTmp = GetPets();  // Original list may be modified in this function
-    if (m_groupPetsTmp.empty())
+    GuidSet groupPetsCopy = GetPets();  // Original list may be modified in this function
+    if (groupPetsCopy.empty())
         return;
 
-    for (GroupPetList::const_iterator itr = m_groupPetsTmp.begin(); itr != m_groupPetsTmp.end(); ++itr)
+    for (GuidSet::const_iterator itr = groupPetsCopy.begin(); itr != groupPetsCopy.end(); ++itr)
     {
         if (Pet* pet = petmap->GetPet(*itr))
         {
@@ -23012,7 +23033,7 @@ void Player::UnsummonPetTemporaryIfAny(bool full)
                 else
                     pet->Unsummon(PET_SAVE_NOT_IN_SLOT, this);
             }
-            DEBUG_LOG("Player::UnsummonPetTemporaryIfAny tempusummon pet %s ",(*itr).GetString().c_str());
+            DEBUG_LOG("Player::UnsummonPetTemporaryIfAny tempusummon pet %s ", (*itr).GetString().c_str());
         }
     }
 }

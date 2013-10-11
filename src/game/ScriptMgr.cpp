@@ -253,18 +253,6 @@ void ScriptMgr::LoadScripts(ScriptMapMapName& scripts, const char* tablename)
         {
             case SCRIPT_COMMAND_TALK:                       // 0
             {
-                if (tmp.talk.chatType > CHAT_TYPE_ZONE_YELL)
-                {
-                    sLog.outErrorDb("Table `%s` has invalid CHAT_TYPE_ (datalong = %u) in SCRIPT_COMMAND_TALK for script id %u", tablename, tmp.talk.chatType, tmp.id);
-                    continue;
-                }
-
-                if (!GetLanguageDescByID(tmp.talk.language))
-                {
-                    sLog.outErrorDb("Table `%s` has datalong2 = %u in SCRIPT_COMMAND_TALK for script id %u, but this language does not exist.", tablename, tmp.talk.language, tmp.id);
-                    continue;
-                }
-
                 if (tmp.textId[0] == 0)
                 {
                     sLog.outErrorDb("Table `%s` has invalid talk text id (dataint = %i) in SCRIPT_COMMAND_TALK for script id %u", tablename, tmp.textId[0], tmp.id);
@@ -828,7 +816,7 @@ void ScriptMgr::LoadCreatureDeathScripts()
 
 void ScriptMgr::LoadDbScriptStrings()
 {
-    sObjectMgr.LoadMangosStrings(WorldDatabase, "db_script_string", MIN_DB_SCRIPT_STRING_ID, MAX_DB_SCRIPT_STRING_ID);
+    sObjectMgr.LoadMangosStrings(WorldDatabase, "db_script_string", MIN_DB_SCRIPT_STRING_ID, MAX_DB_SCRIPT_STRING_ID, true);
 
     std::set<int32> ids;
 
@@ -1129,42 +1117,8 @@ bool ScriptAction::HandleScriptStep()
                 textId = m_script->textId[urand(0, i-1)];
             }
 
-            switch (m_script->talk.chatType)
-            {
-                case CHAT_TYPE_SAY:
-                    pSource->MonsterSay(textId, m_script->talk.language, unitTarget);
-                    break;
-                case CHAT_TYPE_YELL:
-                    pSource->MonsterYell(textId, m_script->talk.language, unitTarget);
-                    break;
-                case CHAT_TYPE_TEXT_EMOTE:
-                    pSource->MonsterTextEmote(textId, unitTarget);
-                    break;
-                case CHAT_TYPE_BOSS_EMOTE:
-                    pSource->MonsterTextEmote(textId, unitTarget, true);
-                    break;
-                case CHAT_TYPE_WHISPER:
-                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
-                    {
-                        sLog.outErrorDb(" DB-SCRIPTS: Process table `%s` id %u, command %u attempt to whisper (%u) to %s, skipping.", m_table, m_script->id, m_script->command, m_script->talk.chatType, unitTarget ? unitTarget->GetGuidStr().c_str() : "<no target>");
-                        break;
-                    }
-                    pSource->MonsterWhisper(textId, unitTarget);
-                    break;
-                case CHAT_TYPE_BOSS_WHISPER:
-                    if (!unitTarget || unitTarget->GetTypeId() != TYPEID_PLAYER)
-                    {
-                        sLog.outErrorDb(" DB-SCRIPTS: Process table `%s` id %u, command %u attempt to whisper (%u) to %s, skipping.", m_table, m_script->id, m_script->command, m_script->talk.chatType, unitTarget ? unitTarget->GetGuidStr().c_str() : "<no target>");
-                        break;
-                    }
-                    pSource->MonsterWhisper(textId, unitTarget, true);
-                    break;
-                case CHAT_TYPE_ZONE_YELL:
-                    pSource->MonsterYellToZone(textId, m_script->talk.language, unitTarget);
-                    break;
-                default:
-                    break;                                  // must be already checked at load
-            }
+            if (!DoDisplayText(pSource, textId, unitTarget))
+                sLog.outErrorDb(" DB-SCRIPTS: Process table `%s` id %u, could not display text %i properly", m_table, m_script->id, textId);
             break;
         }
         case SCRIPT_COMMAND_EMOTE:                          // 1
@@ -1184,7 +1138,7 @@ bool ScriptAction::HandleScriptStep()
             if (m_script->setField.fieldId <= OBJECT_FIELD_ENTRY || m_script->setField.fieldId >= pSourceOrItem->GetValuesCount())
             {
                 sLog.outErrorDb(" DB-SCRIPTS: Process table `%s` id %u, command %u call for wrong field %u (max count: %u) in %s.",
-                              m_table, m_script->id, m_script->command, m_script->setField.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
+                                m_table, m_script->id, m_script->command, m_script->setField.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
                 break;
             }
             pSourceOrItem->SetUInt32Value(m_script->setField.fieldId, m_script->setField.fieldValue);
@@ -1229,7 +1183,7 @@ bool ScriptAction::HandleScriptStep()
             if (m_script->setFlag.fieldId <= OBJECT_FIELD_ENTRY || m_script->setFlag.fieldId >= pSourceOrItem->GetValuesCount())
             {
                 sLog.outErrorDb("SCRIPT_COMMAND_FLAG_SET (script id %u) call for wrong field %u (max count: %u) in %s.",
-                              m_script->id, m_script->setFlag.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
+                                m_script->id, m_script->setFlag.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
                 break;
             }
             pSourceOrItem->SetFlag(m_script->setFlag.fieldId, m_script->setFlag.fieldValue);
@@ -1243,7 +1197,7 @@ bool ScriptAction::HandleScriptStep()
             if (m_script->removeFlag.fieldId <= OBJECT_FIELD_ENTRY || m_script->removeFlag.fieldId >= pSourceOrItem->GetValuesCount())
             {
                 sLog.outErrorDb("SCRIPT_COMMAND_FLAG_REMOVE (script id %u) call for wrong field %u (max count: %u) in %s.",
-                              m_script->id, m_script->removeFlag.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
+                                m_script->id, m_script->removeFlag.fieldId, pSourceOrItem->GetValuesCount(), pSourceOrItem->GetGuidStr().c_str());
                 break;
             }
             pSourceOrItem->RemoveFlag(m_script->removeFlag.fieldId, m_script->removeFlag.fieldValue);
@@ -2100,7 +2054,7 @@ bool ScriptMgr::OnQuestRewarded(Player* pPlayer, GameObject* pGameObject, Quest 
 uint32 ScriptMgr::GetDialogStatus(Player* pPlayer, Creature* pCreature)
 {
     if (!m_pGetNPCDialogStatus)
-        return 100;
+        return DIALOG_STATUS_UNDEFINED;
 
     return m_pGetNPCDialogStatus(pPlayer, pCreature);
 }
@@ -2108,7 +2062,7 @@ uint32 ScriptMgr::GetDialogStatus(Player* pPlayer, Creature* pCreature)
 uint32 ScriptMgr::GetDialogStatus(Player* pPlayer, GameObject* pGameObject)
 {
     if (!m_pGetGODialogStatus)
-        return 100;
+        return DIALOG_STATUS_UNDEFINED;
 
     return m_pGetGODialogStatus(pPlayer, pGameObject);
 }
